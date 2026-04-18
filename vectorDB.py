@@ -1,10 +1,15 @@
 import streamlit as st
-from openai import OpenAI
 import sys
 from pathlib import Path
 from PyPDF2 import PdfReader
 
-# working with chromadb on streamlit community cloud
+import chromadb
+from chromadb.config import Settings
+from chromadb.utils import embedding_functions
+
+# ==============================
+# SQLite fix for Streamlit Cloud
+# ==============================
 if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     try:
         __import__('pysqlite3')
@@ -12,190 +17,134 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     except ImportError:
         st.warning("pysqlite3 not available locally; using system sqlite3")
 
-from chromadb.config import Settings
-import chromadb
+# Streamlit setup
+st.set_page_config(page_title="RAG Retriever", layout="wide")
 
-# create client - openai used for embeddings for chromadb
-if 'openai_client' not in st.session_state:
-    openai_api_key = st.secrets["OPENAI_API_KEY"]
-    st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+# Chromadb setup
+embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
 
-# extract text from pdf
+chroma_client = chromadb.PersistentClient(
+    path="./ChromaDB_for_HelpBot",
+    settings=Settings(anonymized_telemetry=False)
+)
+
+collection = chroma_client.get_or_create_collection(
+    name="IST387Collection",
+    embedding_function=embedding_fn
+)
+
+# Instantiate db
+if "collection" not in st.session_state:
+    st.session_state.collection = collection
+
+
+# Data preprocessing
+def clean_text(text):
+    return " ".join(text.split())
+
+
 def extract_text_from_pdf_path(pdf_path):
-
-    '''
-    this function extracts text from each assignment and document 
-    to pass to add_to_collection
-    '''
-
     text = ""
     with open(pdf_path, "rb") as f:
         reader = PdfReader(f)
         for page in reader.pages:
             page_text = page.extract_text()
             if page_text:
-                text += page_text + "\n"
-
-    # basic cleaning (helps embeddings)
-    text = " ".join(text.split())
-
-    return text
+                text += page_text + " "
+    return clean_text(text)
 
 
-# split text into chunks for better retrieval
-def chunk_text(text, chunk_size=500, overlap=100):
-
-    '''
-    splits large text into smaller overlapping chunks
-    improves embedding + retrieval quality
-    '''
-
+# Chunk PDFs
+def chunk_text(text, chunk_size=800, overlap=150):
+    words = text.split()
     chunks = []
-    start = 0
 
-    while start < len(text):
+    start = 0
+    while start < len(words):
         end = start + chunk_size
-        chunk = text[start:end]
+        chunk = " ".join(words[start:end])
         chunks.append(chunk)
         start += chunk_size - overlap
 
     return chunks
 
 
-# create chromadb client
-chroma_client = chromadb.PersistentClient(path="./ChromaDB_for_HelpBot")
-collection = chroma_client.get_or_create_collection("IST387Collection")
-
-
-# using chromadb with openai embeddings 
+# Add to db
 def add_to_collection(collection, text, file_name):
 
-    '''
-    function to add documents to collections
-    
-    collection: chromadb collection (already established)
-    text: extracted text from pdf files
-    
-    embeddings inserted into the collection from openai
-    '''
-
-    client = st.session_state.openai_client
-
-    # split into chunks
     chunks = chunk_text(text)
 
-    # create embeddings in batch (faster)
-    response = client.embeddings.create(
-        input=chunks,
-        model='text-embedding-3-small'
-    )
+    ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
+    metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
-    embeddings = [item.embedding for item in response.data]
-
-    # add each chunk separately
-    ids = [f"{file_name}_{i}" for i in range(len(chunks))]
-    metadatas = [{"source": file_name} for _ in chunks]
-
-    collection.add(
-        documents=chunks,
-        ids=ids,
-        embeddings=embeddings,
-        metadatas=metadatas
-    )
+    try:
+        collection.add(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas
+        )
+    except Exception:
+        pass
 
 
-# populate collection with pdfs
-def load_pdfs_to_collection(folder_path, collection):
-
-    '''
-    this function uses extract_text_from_pdf and 
-    add_to_collection to put assignments and documents in chromadb collection
-    '''
-
-    loaded_files = []
-
+# PDF load
+def load_pdfs(folder_path, collection):
     folder = Path(folder_path)
 
-    # loop through all PDF files in the folder
     for pdf_file in folder.glob("*.pdf"):
-
-        # extract text from the PDF
         text = extract_text_from_pdf_path(pdf_file)
-
-        # add to ChromaDB
         add_to_collection(collection, text, pdf_file.name)
 
-        loaded_files.append(pdf_file.name)
 
-    return loaded_files
-
-
-# check if collection is empty and load PDFs
-if collection.count() == 0:
-    loaded = load_pdfs_to_collection('./IST387_documents', collection)
+# db load
+if st.session_state.collection.count() == 0:
+    with st.spinner("Loading documents into vector database..."):
+        load_pdfs("./IST387_documents", st.session_state.collection)
 
 
-def get_rag_context(query):
+# Retrieve context w/ metadata function
+def retrieve_context(query, k=4):
 
-    '''
-    query chromadb for relevant information based on user query
-    '''
+    collection = st.session_state.collection
 
-    # create embedding for query
-    client = st.session_state.openai_client
-    response = client.embeddings.create(
-        input=query,
-        model='text-embedding-3-small'
-    )
-
-    # get embedding
-    query_embedding = response.data[0].embedding
-
-    # get text related to this question (this prompt)
     results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=3,
-        include=["documents", "metadatas", "distances"]
+        query_texts=[query],
+        n_results=k
     )
 
-    # combine the retrieved documents into context
-    if results['documents'][0]:
-        context = "\n\n---\n\n".join(results['documents'][0])
-        source_files = [m["source"] for m in results["metadatas"][0]]
-        return context, source_files
-    else:
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+
+    if not docs:
         return None, None
-    
 
-## querying collection for testing - uncomment to test
-topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
+    context = "\n\n---\n\n".join(docs)
+    return context, metas
 
-if topic:
-    client = st.session_state.openai_client
-    response = client.embeddings.create(
-        input=topic,
-        model='text-embedding-3-small'
+
+# ==============================
+# SIDEBAR CONTROLS
+# ==============================
+st.sidebar.header("Controls")
+
+if st.sidebar.button("Rebuild Vector DB"):
+
+    chroma_client = chromadb.PersistentClient(
+        path="./ChromaDB_for_HelpBot",
+        settings=Settings(anonymized_telemetry=False)
     )
 
-    # get the embedding
-    query_embedding = response.data[0].embedding
-
-    # get text related to this question (this prompt)
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=3,
-        include=["documents", "metadatas"]
+    st.session_state.collection = chroma_client.get_or_create_collection(
+        name="IST387Collection",
+        embedding_function=embedding_fn
     )
 
-    # display the results
-    st.subheader(f'Results for: {topic}')
+    collection = st.session_state.collection
 
-    for i in range(len(results['documents'][0])):
-        doc = results['documents'][0][i]
-        doc_id = results['metadatas'][0][i]["source"]
+    for pdf_file in Path("./IST387_documents").glob("*.pdf"):
+        text = extract_text_from_pdf_path(pdf_file)
+        add_to_collection(collection, text, pdf_file.name)
 
-        st.write(f'**{i+1}. {doc_id}**')
-        st.write(doc)
-
-else:
-    st.info('Enter a topic in the sidebar to search the collection')
+    st.sidebar.success("Rebuilt successfully!")
