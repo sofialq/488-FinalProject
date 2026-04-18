@@ -35,13 +35,39 @@ def extract_text_from_pdf_path(pdf_path):
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
+
+    # basic cleaning (helps embeddings)
+    text = " ".join(text.split())
+
     return text
+
+
+# split text into chunks for better retrieval
+def chunk_text(text, chunk_size=500, overlap=100):
+
+    '''
+    splits large text into smaller overlapping chunks
+    improves embedding + retrieval quality
+    '''
+
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start += chunk_size - overlap
+
+    return chunks
+
 
 # create chromadb client
 chroma_client = chromadb.PersistentClient(path="./ChromaDB_for_HelpBot")
 collection = chroma_client.get_or_create_collection("IST387Collection")
 
-# using chromadb with anthropic embeddings 
+
+# using chromadb with openai embeddings 
 def add_to_collection(collection, text, file_name):
 
     '''
@@ -50,25 +76,33 @@ def add_to_collection(collection, text, file_name):
     collection: chromadb collection (already established)
     text: extracted text from pdf files
     
-    embeddings interested into the collection from anthropic
+    embeddings inserted into the collection from openai
     '''
 
-    # create an embedding
     client = st.session_state.openai_client
+
+    # split into chunks
+    chunks = chunk_text(text)
+
+    # create embeddings in batch (faster)
     response = client.embeddings.create(
-        input=text,
+        input=chunks,
         model='text-embedding-3-small'
     )
 
-    # get embedding
-    embedding = response.data[0].embedding
+    embeddings = [item.embedding for item in response.data]
 
-    # add embedding and document to chromadb
+    # add each chunk separately
+    ids = [f"{file_name}_{i}" for i in range(len(chunks))]
+    metadatas = [{"source": file_name} for _ in chunks]
+
     collection.add(
-        documents=[text],
-        ids=[file_name],
-        embeddings=[embedding]
+        documents=chunks,
+        ids=ids,
+        embeddings=embeddings,
+        metadatas=metadatas
     )
+
 
 # populate collection with pdfs
 def load_pdfs_to_collection(folder_path, collection):
@@ -95,9 +129,11 @@ def load_pdfs_to_collection(folder_path, collection):
 
     return loaded_files
 
+
 # check if collection is empty and load PDFs
 if collection.count() == 0:
     loaded = load_pdfs_to_collection('./IST387_documents', collection)
+
 
 def get_rag_context(query):
 
@@ -118,17 +154,19 @@ def get_rag_context(query):
     # get text related to this question (this prompt)
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=3
+        n_results=3,
+        include=["documents", "metadatas", "distances"]
     )
 
     # combine the retrieved documents into context
     if results['documents'][0]:
         context = "\n\n---\n\n".join(results['documents'][0])
-        source_files = results['ids'][0]
+        source_files = [m["source"] for m in results["metadatas"][0]]
         return context, source_files
     else:
         return None, None
     
+
 ## querying collection for testing - uncomment to test
 topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
 
@@ -145,7 +183,8 @@ if topic:
     # get text related to this question (this prompt)
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=3
+        n_results=3,
+        include=["documents", "metadatas"]
     )
 
     # display the results
@@ -153,7 +192,7 @@ if topic:
 
     for i in range(len(results['documents'][0])):
         doc = results['documents'][0][i]
-        doc_id = results['ids'][0][i]
+        doc_id = results['metadatas'][0][i]["source"]
 
         st.write(f'**{i+1}. {doc_id}**')
         st.write(doc)
