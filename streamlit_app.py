@@ -1,13 +1,36 @@
 import streamlit as st
-from anthropic import Anthropic
-import chromadb
-from pathlib import Path
-from PyPDF2 import PdfReader
+import vectorDB
+from RAG_Pipeline import rag_pipeline
 
 st.title("IST 387 Code Helper")
 st.write("created by Andrew Champagne, Marcus Johnson, Sofia Quintero, and Mars Schrag")
 
-#api key
-anthropic_api_key = st.secrets["ANTHROPIC_API_KEY"]
-client = Anthropic(api_key=anthropic_api_key)
+# keep chat history across reruns
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
+# display chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+        if msg.get("sources"):
+            with st.expander("Sources"):
+                for source in msg["sources"]:
+                    st.write(source)
+
+# chat input
+if question := st.chat_input("Ask a question about your documents..."):
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.write(question)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Searching documents..."):
+            answer, sources = rag_pipeline(question)
+        st.write(answer)
+        if sources:
+            with st.expander("Sources"):
+                for source in sources:
+                    st.write(source)
+
+    st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
