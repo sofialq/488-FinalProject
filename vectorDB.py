@@ -121,33 +121,33 @@ def retrieve_context(query, k=4):
         return None, None
     
 ## querying collection for testing - uncomment to test
-topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
+#topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
 
-if topic:
-    client = st.session_state.openai_client
-    response = client.embeddings.create(
-        input=topic,
-        model='text-embedding-3-small'
-    )
+#if topic:
+    #client = st.session_state.openai_client
+    #response = client.embeddings.create(
+        #input=topic,
+        #model='text-embedding-3-small'
+    #)
 
     # get the embedding
-    query_embedding = response.data[0].embedding
+    #query_embedding = response.data[0].embedding
 
     # get text related to this question (this prompt)
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=3
-    )
+    #results = collection.query(
+        #query_embeddings=[query_embedding],
+        #n_results=3
+    #)
 
     # display the results
-    st.subheader(f'Results for: {topic}')
+    #st.subheader(f'Results for: {topic}')
 
-    for i in range(len(results['documents'][0])):
-        doc = results['documents'][0][i]
-        doc_id = results['ids'][0][i]
+    #for i in range(len(results['documents'][0])):
+        #doc = results['documents'][0][i]
+        #doc_id = results['ids'][0][i]
 
-        st.write(f'**{i+1}. {doc_id}**')
-        st.write(doc)
+        #st.write(f'**{i+1}. {doc_id}**')
+        #st.write(doc)
 
-else:
-    st.info('Enter a topic in the sidebar to search the collection')
+#else:
+    #st.info('Enter a topic in the sidebar to search the collection')
