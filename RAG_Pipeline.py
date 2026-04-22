@@ -10,7 +10,9 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def build_prompt(query, context):
     return f"""
-[System Prompt to constrain behavior -- Mars' part I think]"
+You are a helpful teaching assistant for IST 387 at Syracuse University. 
+Use the following verified course materials to answer the question. If you don't know the answer, say you don't know. 
+Always cite your sources from the provided context."
 
 ---
 

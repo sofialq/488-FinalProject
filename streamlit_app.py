@@ -27,6 +27,11 @@ if question := st.chat_input("Ask a question about IST 387..."):
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
             answer, sources = rag_pipeline(question)
+
+        st.write("**DEBUG: Collection count:**", st.session_state.collection.count())
+        raw_results = st.session_state.collection.query(query_texts=[question], n_results=10)
+        st.write("**DEBUG: Retrieved chunks:**", raw_results.get("documents"))
+
         st.write(answer)
         if sources:
             with st.expander("Sources"):
@@ -34,3 +39,4 @@ if question := st.chat_input("Ask a question about IST 387..."):
                     st.write(source)
 
     st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
+
