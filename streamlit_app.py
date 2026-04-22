@@ -29,8 +29,6 @@ if question := st.chat_input("Ask a question about IST 387..."):
             answer, sources = rag_pipeline(question)
 
         st.write("**DEBUG: Collection count:**", st.session_state.collection.count())
-        raw_results = st.session_state.collection.query(query_texts=[question], n_results=10)
-        st.write("**DEBUG: Retrieved chunks:**", raw_results.get("documents"))
 
         st.write(answer)
         if sources:

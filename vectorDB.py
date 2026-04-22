@@ -104,6 +104,8 @@ def load_pdfs(folder_path, collection):
 # only ingests new files not already in the DB
 with st.spinner("Checking documents..."):
     load_pdfs("./IST387_documents", st.session_state.collection)
+    ingested = get_ingested_sources(st.session_state.collection)
+    st.write("**DEBUG: Ingested files:**", ingested)
 
 
 # retrieval
