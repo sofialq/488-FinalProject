@@ -19,7 +19,7 @@ for msg in st.session_state.messages:
                     st.write(source)
 
 # chat input
-if question := st.chat_input("Ask a question about IST 387..."):
+if question := st.chat_input("Ask any questions about IST 387..."):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.write(question)
@@ -30,11 +30,5 @@ if question := st.chat_input("Ask a question about IST 387..."):
 
         # st.write("**DEBUG: Collection count:**", st.session_state.collection.count())
 
-        st.write(answer)
-        if sources:
-            with st.expander("Sources"):
-                for source in sources:
-                    st.write(source)
-
-    st.session_state.messages.append({"role": "assistant", "content": answer, "sources": sources})
+    st.session_state.messages.append({"role": "assistant", "content": answer})
 
