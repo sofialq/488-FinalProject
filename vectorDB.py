@@ -1,7 +1,7 @@
 import streamlit as st
 import sys
 from pathlib import Path
-from PyPDF2 import PdfReader
+import pdfplumber
 import openai
 import chromadb
 from chromadb.config import Settings
@@ -49,9 +49,8 @@ def clean_text(text):
 
 def extract_text_from_pdf_path(pdf_path):
     text = ""
-    with open(pdf_path, "rb") as f:
-        reader = PdfReader(f)
-        for page in reader.pages:
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
             page_text = page.extract_text()
             if page_text:
                 text += page_text + " "
