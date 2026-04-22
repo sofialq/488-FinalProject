@@ -109,20 +109,18 @@ def load_pdfs(folder_path, collection):
 
 
 
-# only ingests new files not already in the DB
-with st.spinner("Checking documents..."):
-    newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
+# check which documents are already ingested and ingest new ones
+#with st.spinner("Checking documents..."):
+    #newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
 
-    st.subheader("Ingestion Status")
+    #if len(newly_ingested) == 0:
+        #st.success("All documents are already ingested.")
+    #else:
+        #st.info(f"Ingested {len(newly_ingested)} new documents:")
+        #st.write(newly_ingested)
 
-    if len(newly_ingested) == 0:
-        st.success("All documents are already ingested.")
-    else:
-        st.info(f"Ingested {len(newly_ingested)} new documents:")
-        st.write(newly_ingested)
-
-    st.write("Skipped (already ingested):")
-    st.write(skipped)
+    #st.write("Skipped (already ingested):")
+    #st.write(skipped)
 
 # retrieval
 def retrieve_context(query, k=4):

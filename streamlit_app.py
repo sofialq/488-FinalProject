@@ -28,7 +28,7 @@ if question := st.chat_input("Ask a question about IST 387..."):
         with st.spinner("Searching verified documents..."):
             answer, sources = rag_pipeline(question)
 
-        st.write("**DEBUG: Collection count:**", st.session_state.collection.count())
+        # st.write("**DEBUG: Collection count:**", st.session_state.collection.count())
 
         st.write(answer)
         if sources:
