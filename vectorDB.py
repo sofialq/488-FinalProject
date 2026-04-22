@@ -2,7 +2,7 @@ import streamlit as st
 import sys
 from pathlib import Path
 from PyPDF2 import PdfReader
-
+import openai
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
@@ -17,12 +17,18 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     except ImportError:
         st.warning("pysqlite3 not available locally; using system sqlite3")
 
+# client
+if 'openai_client' not in st.session_state:
+    openai_api_key = st.secrets["OPENAI_API_KEY"]
+    st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+
 # Streamlit setup
 st.set_page_config(page_title="RAG Retriever", layout="wide")
 
 # Chromadb setup
-embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
+embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+    api_key=openai_api_key,
+    model_name="text-embedding-ada-002"
 )
 
 chroma_client = chromadb.PersistentClient(

@@ -19,13 +19,13 @@ for msg in st.session_state.messages:
                     st.write(source)
 
 # chat input
-if question := st.chat_input("Ask a question about your documents..."):
+if question := st.chat_input("Ask a question about IST 387..."):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.write(question)
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching documents..."):
+        with st.spinner("Searching verified documents..."):
             answer, sources = rag_pipeline(question)
         st.write(answer)
         if sources:
