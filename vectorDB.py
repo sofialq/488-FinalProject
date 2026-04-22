@@ -21,7 +21,6 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
 
 # client setup
 if 'openai_client' not in st.session_state:
-    openai_api_key = st.secrets["OPENAI_API_KEY"]
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 # Streamlit setup
