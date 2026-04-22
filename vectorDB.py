@@ -5,13 +5,11 @@ from PyPDF2 import PdfReader
 import openai
 import chromadb
 from chromadb.config import Settings
-
-openai_api_key = st.secrets["OPENAI_API_KEY"]
 from chromadb.utils import embedding_functions
 
-# ==============================
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+
 # SQLite fix for Streamlit Cloud
-# ==============================
 if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     try:
         __import__('pysqlite3')
@@ -19,14 +17,13 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     except ImportError:
         st.warning("pysqlite3 not available locally; using system sqlite3")
 
-# client setup
+# OpenAI client setup
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
-# Streamlit setup
 st.set_page_config(page_title="RAG Retriever", layout="wide")
 
-# Chromadb setup
+# chromaDB setup
 embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
     api_key=openai_api_key,
     model_name="text-embedding-ada-002"
@@ -42,12 +39,10 @@ collection = chroma_client.get_or_create_collection(
     embedding_function=embedding_fn
 )
 
-# Instantiate db
 if "collection" not in st.session_state:
     st.session_state.collection = collection
 
-
-# Data preprocessing
+# text processing
 def clean_text(text):
     return " ".join(text.split())
 
@@ -63,57 +58,56 @@ def extract_text_from_pdf_path(pdf_path):
     return clean_text(text)
 
 
-# Chunk PDFs
 def chunk_text(text, chunk_size=800, overlap=150):
     words = text.split()
     chunks = []
-
     start = 0
     while start < len(words):
         end = start + chunk_size
         chunk = " ".join(words[start:end])
         chunks.append(chunk)
         start += chunk_size - overlap
-
     return chunks
 
 
-# Add to db
+# ingestion
+def get_ingested_sources(collection):
+    existing = collection.get()["metadatas"]
+    return set(m["source"] for m in existing if m)
+
+
 def add_to_collection(collection, text, file_name):
-
     chunks = chunk_text(text)
-
     ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
     try:
-        collection.add(
-            documents=chunks,
-            ids=ids,
-            metadatas=metadatas
-        )
-    except Exception:
-        pass
+        collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+        print(f"Added {len(chunks)} chunks from {file_name}")
+    except Exception as e:
+        print(f"Error adding {file_name}: {e}")
 
 
-# PDF load
 def load_pdfs(folder_path, collection):
     folder = Path(folder_path)
+    already_ingested = get_ingested_sources(collection)
 
     for pdf_file in folder.glob("*.pdf"):
+        if pdf_file.name in already_ingested:
+            print(f"Skipping (already ingested): {pdf_file.name}")
+            continue
+        print(f"Ingesting: {pdf_file.name}")
         text = extract_text_from_pdf_path(pdf_file)
         add_to_collection(collection, text, pdf_file.name)
 
 
-# db load
-if st.session_state.collection.count() == 0:
-    with st.spinner("Loading documents into vector database..."):
-        load_pdfs("./IST387_documents", st.session_state.collection)
+# only ingests new files not already in the DB
+with st.spinner("Checking documents..."):
+    load_pdfs("./IST387_documents", st.session_state.collection)
 
 
-# Retrieve context w/ metadata function
+# retrieval
 def retrieve_context(query, k=4):
-
     collection = st.session_state.collection
 
     results = collection.query(
@@ -126,6 +120,8 @@ def retrieve_context(query, k=4):
 
     if not docs:
         return None, None
+
+    return docs, metas
     
 ## querying collection for testing - uncomment to test
 #topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
