@@ -5,6 +5,8 @@ from PyPDF2 import PdfReader
 import openai
 import chromadb
 from chromadb.config import Settings
+
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 from chromadb.utils import embedding_functions
 
 # ==============================
@@ -17,10 +19,10 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     except ImportError:
         st.warning("pysqlite3 not available locally; using system sqlite3")
 
-# client
+# client setup
 if 'openai_client' not in st.session_state:
     openai_api_key = st.secrets["OPENAI_API_KEY"]
-    st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+    st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 # Streamlit setup
 st.set_page_config(page_title="RAG Retriever", layout="wide")
