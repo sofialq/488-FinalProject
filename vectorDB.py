@@ -91,21 +91,38 @@ def load_pdfs(folder_path, collection):
     folder = Path(folder_path)
     already_ingested = get_ingested_sources(collection)
 
+    newly_ingested = []
+    skipped = []
+
     for pdf_file in folder.glob("*.pdf"):
         if pdf_file.name in already_ingested:
+            skipped.append(pdf_file.name)
             print(f"Skipping (already ingested): {pdf_file.name}")
             continue
+
         print(f"Ingesting: {pdf_file.name}")
         text = extract_text_from_pdf_path(pdf_file)
         add_to_collection(collection, text, pdf_file.name)
+        newly_ingested.append(pdf_file.name)
+
+    return newly_ingested, skipped
+
 
 
 # only ingests new files not already in the DB
 with st.spinner("Checking documents..."):
-    load_pdfs("./IST387_documents", st.session_state.collection)
-    ingested = get_ingested_sources(st.session_state.collection)
-    st.write("**DEBUG: Ingested files:**", ingested)
+    newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
 
+    st.subheader("Ingestion Status")
+
+    if len(newly_ingested) == 0:
+        st.success("All documents are already ingested.")
+    else:
+        st.info(f"Ingested {len(newly_ingested)} new documents:")
+        st.write(newly_ingested)
+
+    st.write("Skipped (already ingested):")
+    st.write(skipped)
 
 # retrieval
 def retrieve_context(query, k=4):
