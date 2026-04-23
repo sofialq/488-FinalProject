@@ -167,6 +167,8 @@ if question:
             new_memories = json.loads(response.choices[0].message.content)
             st.session_state.last_extracted_memories = new_memories
 
+            new_memories = [m for m in new_memories if m not in memories]
+            
             if new_memories:
                 memories.extend(new_memories)
                 save_memories(memory_file, memories)
