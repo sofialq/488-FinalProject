@@ -9,30 +9,48 @@ import openai
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
+
+# user selection for user-based memory
+st.sidebar.header("User Settings")
+
+username = st.sidebar.text_input("Enter your username:", key="username_input")
+
+if not username:
+    st.warning("Please enter a username to begin.")
+    st.stop()
+
+# normalize username for file naming
+username = username.strip().lower().replace(" ", "_")
+memory_file = f"memory_{username}.json"
+
+st.sidebar.write(f"Active user: **{username}**")
+
+
 # load + save memory
-def load_memory():
-    if os.path.exists("memory.json"):
-        with open("memory.json", "r") as f:
+def load_memory(memory_file):
+    if os.path.exists(memory_file):
+        with open(memory_file, "r") as f:
             return json.load(f)
     return []
 
-def save_memories(memories):
-    with open("memory.json", "w") as f:
+def save_memories(memory_file, memories):
+    with open(memory_file, "w") as f:
         json.dump(memories, f)
 
-memories = load_memory()
+memories = load_memory(memory_file)
 
+
+# system message
 system_message = "You are a helpful teaching assistant for IST 387 at Syracuse University."
 
 if memories:
     memory_str = "\n".join([f"- {m}" for m in memories])
     system_message += (
-        "\n\nHere are some things you've learned from previous interactions:\n"
+        "\n\nHere are some things you've learned from previous interactions with this user:\n"
         f"{memory_str}\n\n"
         "Use this information to help answer the user's questions, but do not rely on it exclusively. "
         "Always use verified course materials as your primary source."
     )
-
 
 # initialize chromaDB
 embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
@@ -53,14 +71,17 @@ collection = chroma_client.get_or_create_collection(
 if "collection" not in st.session_state:
     st.session_state.collection = collection
 
+
 # initialize OpenAI client
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 
 # memory debug panel
-with st.sidebar.expander(" Memory Debug Panel"):
-    st.write("**memory.json exists:**", os.path.exists("memory.json"))
+with st.sidebar.expander("🧠 Memory Debug Panel"):
+    st.write("**Active user:**", username)
+    st.write("**Memory file:**", memory_file)
+    st.write("**File exists:**", os.path.exists(memory_file))
     st.write("**Current working directory:**", os.getcwd())
     st.write("**Directory writable:**", os.access(os.getcwd(), os.W_OK))
     st.write("**Loaded memories:**", memories)
@@ -113,28 +134,29 @@ if question:
         "content": answer
     })
 
-    # memory extraction - only if we have at least 2 messages (1 user + 1 assistant)
+
+    # memory extraction
     if len(st.session_state.messages) >= 2:
         user_msg = st.session_state.messages[-2]["content"]
         assistant_msg = st.session_state.messages[-1]["content"]
 
         extraction_prompt = f"""
-    You are extracting long-term learning signals from a tutoring conversation.
+        You are extracting long-term learning signals from a tutoring conversation.
 
-    Your task:
-    - Identify 1–3 concepts the user appears to struggle with.
-    - ONLY return a JSON list of short phrases.
-    - If nothing new is learned, return [].
+        Your task:
+        - Identify 1–3 concepts the user appears to struggle with.
+        - ONLY return a JSON list of short phrases.
+        - If nothing new is learned, return [].
 
-    Already known memories:
-    {json.dumps(memories)}
+        Already known memories:
+        {json.dumps(memories)}
 
-    User message: {user_msg}
-    Assistant message: {assistant_msg}
+        User message: {user_msg}
+        Assistant message: {assistant_msg}
 
-    Return ONLY valid JSON. No explanation.
-    Example: ["confused about joins", "struggling with map functions"]
-    """
+        Return ONLY valid JSON. No explanation.
+        Example: ["confused about joins", "struggling with map functions"]
+        """
 
         response = st.session_state.openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -147,13 +169,15 @@ if question:
 
             if new_memories:
                 memories.extend(new_memories)
-                save_memories(memories)
+                save_memories(memory_file, memories)
 
         except json.JSONDecodeError:
             st.session_state.last_extracted_memories = "JSON decode error"
 
+
     # refresh UI so answer appears immediately
     st.rerun()
+
 
 
 
