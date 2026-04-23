@@ -9,6 +9,7 @@ from chromadb.utils import embedding_functions
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
+
 # SQLite fix for Streamlit Cloud
 if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     try:
@@ -17,11 +18,13 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
     except ImportError:
         st.warning("pysqlite3 not available locally; using system sqlite3")
 
+
 # OpenAI client setup
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 st.set_page_config(page_title="RAG Retriever", layout="wide")
+
 
 # chromaDB setup
 embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
@@ -41,6 +44,7 @@ collection = chroma_client.get_or_create_collection(
 
 if "collection" not in st.session_state:
     st.session_state.collection = collection
+
 
 # text processing
 def clean_text(text):
@@ -69,7 +73,7 @@ def chunk_text(text, chunk_size=800, overlap=150):
     return chunks
 
 
-# ingestion
+# ingestion functions
 def get_ingested_sources(collection):
     existing = collection.get()["metadatas"]
     return set(m["source"] for m in existing if m)
@@ -108,21 +112,26 @@ def load_pdfs(folder_path, collection):
     return newly_ingested, skipped
 
 
+# ingestion - runs once per session
+if "ingestion_done" not in st.session_state:
+    with st.spinner("Checking and ingesting documents..."):
+        newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
 
-# check which documents are already ingested and ingest new ones
-#with st.spinner("Checking documents..."):
-    #newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
+    st.session_state.ingestion_done = True
 
-    #if len(newly_ingested) == 0:
-        #st.success("All documents are already ingested.")
-    #else:
-        #st.info(f"Ingested {len(newly_ingested)} new documents:")
-        #st.write(newly_ingested)
+    st.subheader("Document Ingestion Summary")
 
-    #st.write("Skipped (already ingested):")
-    #st.write(skipped)
+    if len(newly_ingested) == 0:
+        st.success("All documents were already ingested.")
+    else:
+        st.info(f"Ingested {len(newly_ingested)} new documents:")
+        st.write(newly_ingested)
 
-# retrieval
+    st.write("Skipped (already ingested):")
+    st.write(skipped)
+
+
+# retrieval 
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
 
@@ -138,7 +147,8 @@ def retrieve_context(query, k=4):
         return None, None
 
     return docs, metas
-    
+
+
 ## querying collection for testing - uncomment to test
 #topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
 
