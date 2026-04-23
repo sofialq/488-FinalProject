@@ -9,14 +9,10 @@ st.write("created by Andrew Champagne, Marcus Johnson, Sofia Quintero, and Mars 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# display chat history BEFORE input
+# display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        if msg.get("sources"):
-            with st.expander("Sources"):
-                for source in msg["sources"]:
-                    st.write(source)
 
 # chat input
 question = st.chat_input("Ask any questions about IST 387...")
@@ -32,18 +28,18 @@ if question:
     # generate answer
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
-            answer, sources = rag_pipeline(question)
+            answer, _ = rag_pipeline(question) 
 
         st.write(answer)
 
-        # store assistant message
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": answer,
-            "sources": sources
-        })
+    # store assistant message (no sources)
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": answer
+    })
 
-    # force immediate UI refresh so answer appears NOW
+    # refresh UI so answer appears immediately
     st.rerun()
+
 
 
