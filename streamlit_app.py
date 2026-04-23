@@ -5,7 +5,9 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from RAG_Pipeline import rag_pipeline
+import openai
 
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 # load + save memory
 def load_memory():
@@ -50,6 +52,10 @@ collection = chroma_client.get_or_create_collection(
 
 if "collection" not in st.session_state:
     st.session_state.collection = collection
+
+# initialize OpenAI client
+if 'openai_client' not in st.session_state:
+    st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 
 # memory debug panel

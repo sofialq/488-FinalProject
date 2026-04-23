@@ -23,8 +23,6 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
-st.set_page_config(page_title="RAG Retriever", layout="wide")
-
 
 # chromaDB setup
 embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
