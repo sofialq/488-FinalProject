@@ -16,7 +16,7 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
         __import__('pysqlite3')
         sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
     except ImportError:
-        st.warning("pysqlite3 not available locally; using system sqlite3")
+        pass
 
 
 # OpenAI client setup
@@ -118,18 +118,6 @@ if "ingestion_done" not in st.session_state:
         newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
 
     st.session_state.ingestion_done = True
-
-    st.subheader("Document Ingestion Summary")
-
-    if len(newly_ingested) == 0:
-        st.success("All documents were already ingested.")
-    else:
-        st.info(f"Ingested {len(newly_ingested)} new documents:")
-        st.write(newly_ingested)
-
-    st.write("Skipped (already ingested):")
-    st.write(skipped)
-
 
 # retrieval 
 def retrieve_context(query, k=4):
