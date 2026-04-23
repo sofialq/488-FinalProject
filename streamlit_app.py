@@ -70,6 +70,16 @@ if question:
     })
 
     # memory extraction - only run if we have at least 2 messages (a user question and an assistant answer)
+    try:
+        new_memories = json.loads(answer.choices[0].message.content)
+        st.session_state.last_extracted_memories = new_memories
+
+        if new_memories:
+            memories.extend(new_memories)
+            save_memories(memories)
+    except json.JSONDecodeError:
+        st.session_state.last_extracted_memories = "JSON decode error"
+
     if len(st.session_state.messages) >= 2:
         user_msg = st.session_state.messages[-2]["content"]
         assistant_msg = st.session_state.messages[-1]["content"]
@@ -100,6 +110,19 @@ if question:
                 save_memories(memories)
         except json.JSONDecodeError:
             pass
+
+    # memory debug panel
+    with st.sidebar.expander("🧠 Memory Debug Panel"):
+        st.write("**memory.json exists:**", os.path.exists("memory.json"))
+        st.write("**Current working directory:**", os.getcwd())
+        st.write("**Directory writable:**", os.access(os.getcwd(), os.W_OK))
+        st.write("**Loaded memories:**", memories)
+
+        # show the last extracted memories:
+        if "last_extracted_memories" in st.session_state:
+            st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
+        else:
+            st.write("**Last extracted memories:** None yet")
 
     # refresh UI so answer appears immediately
     st.rerun()
