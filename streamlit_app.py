@@ -108,40 +108,44 @@ if question:
     })
 
 
-    # memory extraction - only if we have at least 2 messages (1 user + 1 assistant)
-    if len(st.session_state.messages) >= 2:
-        user_msg = st.session_state.messages[-2]["content"]
-        assistant_msg = st.session_state.messages[-1]["content"]
+# memory extraction - only if we have at least 2 messages (1 user + 1 assistant)
+if len(st.session_state.messages) >= 2:
+    user_msg = st.session_state.messages[-2]["content"]
+    assistant_msg = st.session_state.messages[-1]["content"]
 
-        extraction_prompt = f"""
-        Analyze the conversation and identify what concepts the user seems to struggle with.
-        Extract 1–3 key concepts based on their questions and the assistant's answers.
+    extraction_prompt = f"""
+You are extracting long-term learning signals from a tutoring conversation.
 
-        Already known memories:
-        {json.dumps(memories)}
+Your task:
+- Identify 1–3 concepts the user appears to struggle with.
+- ONLY return a JSON list of short phrases.
+- If nothing new is learned, return [].
 
-        User message: {user_msg}
-        Assistant message: {assistant_msg}
+Already known memories:
+{json.dumps(memories)}
 
-        Return ONLY a JSON list of new facts. If no new facts, return [].
-        """
+User message: {user_msg}
+Assistant message: {assistant_msg}
 
-        response = st.session_state.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": extraction_prompt}]
-        )
+Return ONLY valid JSON. No explanation.
+Example: ["confused about joins", "struggling with map functions"]
+"""
 
-        try:
-            new_memories = json.loads(response.choices[0].message.content)
-            st.session_state.last_extracted_memories = new_memories
+    response = st.session_state.openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": extraction_prompt}]
+    )
 
-            if new_memories:
-                memories.extend(new_memories)
-                save_memories(memories)
+    try:
+        new_memories = json.loads(response.choices[0].message.content)
+        st.session_state.last_extracted_memories = new_memories
 
-        except json.JSONDecodeError:
-            st.session_state.last_extracted_memories = "JSON decode error"
+        if new_memories:
+            memories.extend(new_memories)
+            save_memories(memories)
 
+    except json.JSONDecodeError:
+        st.session_state.last_extracted_memories = "JSON decode error"
 
     # refresh UI so answer appears immediately
     st.rerun()
