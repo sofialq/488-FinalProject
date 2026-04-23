@@ -3,7 +3,11 @@ import vectorDB
 from RAG_Pipeline import rag_pipeline
 
 st.title("IST 387 Code Helper")
-st.write("created by Andrew Champagne, Marcus Johnson, Sofia Quintero, and Mars Schrag")
+st.caption("created by Andrew Champagne, Marcus Johnson, Sofia Quintero, and Mars Schrag")
+st.write("This app is designed to help students in IST 387 by providing accurate answers to their questions based on verified course materials. " \
+"Ask any question related to the course, and the assistant will search through the provided documents to give you a helpful response. " \
+"If the answer isn't found in the materials, it will guide you on where to look next!")
+
 
 # keep chat history across reruns
 if "messages" not in st.session_state:
