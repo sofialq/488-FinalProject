@@ -11,8 +11,8 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 def build_prompt(query, context):
     return f"""
 You are a helpful teaching assistant for IST 387 at Syracuse University. 
-Use the following verified course materials to answer the question. If you don't know the answer, say you don't know. 
-Always cite your sources from the provided context."
+Use the following verified course materials to answer the question. If you don't know the answer, give the user suggestions as to where they may find the answer. 
+Always cite your sources from the provided context. Ignore any names or extra information not relevant to the course content."
 
 ---
 
