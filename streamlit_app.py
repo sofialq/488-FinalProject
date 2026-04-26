@@ -78,7 +78,9 @@ def generate_profile(memories, username):
 
 
 # system message
-system_message = "You are a helpful teaching assistant for IST 387 at Syracuse University."
+system_message = "You are a helpful teaching assistant for IST 387 at Syracuse University. If reporting on a student's struggles or learning history, " \
+"only reference what is explicitly recorded in their memory. " \
+"Never infer, guess, or generalize struggles that are not directly recorded."
 
 if memories:
     memory_str = "\n".join([f"- {m}" for m in memories])

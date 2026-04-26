@@ -93,12 +93,10 @@ def summarize_topic_from_memory(topic, memories):
     Searches the user's long-term memory and generated profile for struggles
     related to the given topic. Returns a plain-text summary for the LLM.
     """
+
     topic_lower = topic.lower()
 
-    # search raw memories for topic matches
     matches = [m for m in memories if topic_lower in m.lower()] if memories else []
-
-    # pull in the generated profile if one exists
     profile = st.session_state.get("profile", None)
 
     result_parts = []
@@ -106,15 +104,15 @@ def summarize_topic_from_memory(topic, memories):
     if matches:
         match_str = "\n".join([f"- {m}" for m in matches])
         result_parts.append(f"Recorded struggles related to '{topic}':\n{match_str}")
+    else:
+        result_parts.append(
+            f"No recorded struggles found for '{topic}'. "
+            f"You MUST tell the user exactly this: you have no recorded history of struggling with {topic}. "
+            f"Do not invent or infer struggles that are not listed here."
+        )
 
     if profile:
-        result_parts.append(f"Overall student profile (use this for broader context):\n{profile}")
-
-    if not result_parts:
-        return (
-            f"No recorded struggles found related to '{topic}' or no profile has been "
-            f"generated yet. Encourage the user to keep chatting so a profile can be built."
-        )
+        result_parts.append(f"Overall student profile (for context only — do not use this to infer struggles about '{topic}' unless explicitly mentioned):\n{profile}")
 
     return "\n\n".join(result_parts)
 
