@@ -220,8 +220,13 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         memories = st.session_state.get("memories", [])
 
         # Execute the correct tool
+        # Execute the correct tool
         if tool_name == "summarize_topic_from_memory":
             tool_result = summarize_topic_from_memory(tool_args["topic"], memories)
+
+            # bypass second LLM call entirely if no match found- prevent LLM from hallucinating using system message context
+            if tool_result.startswith("NO_MATCH:"):
+                return f"You have no recorded history of struggling with {tool_args['topic']}.", sources
 
         elif tool_name == "generate_practice_question":
             tool_result = generate_practice_question(
