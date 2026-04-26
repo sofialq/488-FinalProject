@@ -1,9 +1,9 @@
+import re
 import json
 import streamlit as st
 from openai import OpenAI
 from sentence_transformers import CrossEncoder
 from vectorDB import retrieve_context
-import re
 
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -32,18 +32,17 @@ ANSWER:
 """
 
 
-# tool definitions
+# tool definition
 tools = [
     {
         "type": "function",
         "function": {
             "name": "summarize_topic_from_memory",
             "description": (
-                "ALWAYS use this tool when the user asks where they have been struggling, "
-                "what they find confusing, what topics they should focus on, or anything about "
-                "their learning history or progress. Do not answer memory-related questions from "
-                "general knowledge — always look up the user's actual recorded history first. "
-                "Refernce the user's study profile if available."
+                "Look up what this user has previously struggled with on a given topic, "
+                "based on their long-term learning history. Use this when the user asks "
+                "what they find confusing, what they should study, or asks about their "
+                "progress or struggles with a specific concept."
             ),
             "parameters": {
                 "type": "object",
@@ -62,7 +61,7 @@ tools = [
         "function": {
             "name": "generate_practice_question",
             "description": (
-                "Generate a personalized practice question for the user based on topics "
+                "Generate a personalized practice question for the user based on a topic "
                 "they have been struggling with. Use this when the user asks to be quizzed, "
                 "wants a practice problem, asks to test their knowledge, or says something "
                 "like 'give me a question about X' or 'can you quiz me on X'."
@@ -77,8 +76,7 @@ tools = [
                     "difficulty": {
                         "type": "string",
                         "enum": ["beginner", "intermediate", "advanced"],
-                        "description": "The difficulty level of the question. Infer this from the user's study profile if one has been generated, otherwise use memory"
-                        " — if they have many recorded struggles, start with beginner."
+                        "description": "The difficulty level of the question. Infer this from the user's memory — if they have many recorded struggles, start with beginner."
                     }
                 },
                 "required": ["topic", "difficulty"]
@@ -89,36 +87,30 @@ tools = [
 
 
 # tool execution
-import re
-
 def summarize_topic_from_memory(topic, memories):
+    """
+    Searches the user's long-term memory for struggles related to the given topic.
+    Uses whole-word matching to prevent false matches (e.g. "strings" vs "struggling").
+    Never uses the generated profile to avoid hallucination.
+    """
     topic_lower = topic.lower()
 
-    # match whole words 
+    # match whole words only — prevents "strings" matching inside "struggling"
     topic_words = [w for w in topic_lower.split() if len(w) > 3]
     matches = [
         m for m in memories
         if any(re.search(rf'\b{re.escape(word)}\b', m.lower()) for word in topic_words)
     ] if memories else []
 
-    profile = st.session_state.get("profile", None)
-
-    result_parts = []
-
     if matches:
         match_str = "\n".join([f"- {m}" for m in matches])
-        result_parts.append(f"Recorded struggles related to '{topic}':\n{match_str}")
+        return f"Recorded struggles related to '{topic}':\n{match_str}"
     else:
-        result_parts.append(
-            f"No recorded struggles found for '{topic}'. "
-            f"You MUST tell the user exactly this: you have no recorded history of struggling with {topic}. "
-            f"Do not invent or infer struggles that are not listed here."
+        return (
+            f"NO_MATCH: No recorded struggles found for '{topic}'. "
+            f"You MUST respond with exactly: 'You have no recorded history of struggling with {topic}.' "
+            f"Do not reference the student profile. Do not invent struggles. Do not elaborate."
         )
-
-    if profile:
-        result_parts.append(f"Overall student profile (for context only — do not use this to infer struggles about '{topic}' unless explicitly mentioned):\n{profile}")
-
-    return "\n\n".join(result_parts)
 
 
 def generate_practice_question(topic, difficulty, memories, context):
@@ -133,34 +125,34 @@ def generate_practice_question(topic, difficulty, memories, context):
     memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
 
     prompt = f"""
-    You are a helpful teaching assistant generating a practice question for an IST 387 student at Syracuse University.
+        You are generating a practice question for an IST 387 student at Syracuse University.
 
-    Topic: {topic}
-    Difficulty: {difficulty}
+        Topic: {topic}
+        Difficulty: {difficulty}
 
-    The student has the following recorded struggles related to this topic:
-    {memory_context}
+        The student has the following recorded struggles related to this topic:
+        {memory_context}
 
-    Use the following course material as the basis for your question:
-    {context[:2000]}
+        Use the following course material as the basis for your question:
+        {context[:2000]}
 
-    Generate ONE practice question that:
-    - Directly tests understanding of {topic}
-    - Is appropriate for {difficulty} level
-    - Targets the student's specific recorded struggles where possible
-    - Includes a clear, step-by-step answer key
+        Generate ONE practice question that:
+        - Directly tests understanding of {topic}
+        - Is appropriate for {difficulty} level
+        - Targets the student's specific recorded struggles where possible
+        - Includes a clear, step-by-step answer key
 
-    Format your response exactly like this:
+        Format your response exactly like this:
 
-    **Question:**
-    <the question here>
+        **Question:**
+        <the question here>
 
-    **Answer Key:**
-    <step-by-step answer here>
+        **Answer Key:**
+        <step-by-step answer here>
 
-    **Why this question:**
-    <one sentence explaining why this targets the student's struggles>
-    """
+        **Why this question:**
+        <one sentence explaining why this targets the student's struggles>
+        """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -242,7 +234,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         else:
             tool_result = "Tool not found."
 
-        # Append assistant tool call as a proper dict 
+        # Append assistant tool call as a proper dict (fixes BadRequestError)
         messages.append({
             "role": "assistant",
             "content": None,
