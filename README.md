@@ -1,1 +1,10 @@
 # 488-FinalProject
+This project is an IST 387 helper bot that students seeking help for the class can use to receive more helpful and intentional advice than they would receive from genAI. Furthermore, this bot becomes personalized and tailored to the user the more they use it, ensuring the user can receive help similar to what they may receive from a TA. 
+
+The goal from this bot is to provide users with more useful learning sources. It has become unavoidable that students will seek help from AI when they’re doing their work, but with this project we can ensure students are seeking help from tools that can properly help them. This tool may even become useful to students who struggle to seek help because they get shy or embarrassed reaching out to TAs, professors, or fellow classmates.
+
+The system works by referencing provided course material to answer user questions about how to code with R studio. It will provide detailed responses about code details and functions for the user to better understand how to tailor concepts to their classwork. The LLM will remember what concepts the user has asked questions about to create a study profile to help the user with what they’re struggling with most. If the user wants to inquire about what it seems they need to study, the bot will be able to respond. Additionally, if the user chooses to use the bot as a study tool, the bot is able to provide practice questions for the user to refine their coding skill and knowledge.
+
+The bot’s strengths lie in being able to provide coding help and examples based on real class material, meaning students will never be given information that is more complicated than the concepts being taught in class. Additionally, the long term memory feature tailored to every user makes it so that students can get more personalized help and study guides. The bot’s weakness is being able to identify where the user isn’t struggling. While the LLM has been refined to avoid hallucinating problems the user may be having based on common problems others face, it may sometimes break through and still reference these issues.
+
+Make sure to import requirements.txt before running the bot. 
