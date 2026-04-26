@@ -153,8 +153,21 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         else:
             tool_result = "Tool not found."
 
-        # Append the assistant's tool call and the tool result to messages
-        messages.append(response_message)
+        # Append the assistant's tool call and the tool result to message
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": tool_call.function.arguments
+                    }
+                }
+            ]
+        })
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
