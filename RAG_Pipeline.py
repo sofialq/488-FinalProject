@@ -202,12 +202,19 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
     messages.append({"role": "user", "content": prompt})
 
     # First LLM call — may invoke a tool
+    memory_keywords = ["struggling", "struggle", "confused", "where have i", "where am i",
+                    "what have i", "what am i", "focus on", "should i study", "my weakness"]
+    is_memory_query = any(kw in query.lower() for kw in memory_keywords)
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
         tools=tools,
-        tool_choice="auto"
-    )
+        tool_choice={
+            "type": "function",
+            "function": {"name": "summarize_topic_from_memory"}
+        } if is_memory_query else "auto"
+)
 
     response_message = response.choices[0].message
 
