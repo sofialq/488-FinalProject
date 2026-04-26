@@ -149,19 +149,42 @@ with st.sidebar.expander("My Study Profile"):
 # streamlit ui
 st.title("IST 387 Code Helper")
 st.caption("created by Andrew Champagne, Marcus Johnson, Sofia Quintero, and Mars Schrag")
-st.write("""Ask any questions about IST 387 and get answers based on verified course materials. 
-         If the answer isn't in the materials, I'll do my best to point you in the right direction!
-         The assistant can also learn from the conversation to better assist you in the future!""")
 
 # keep chat history across reruns
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# greet user once per session
+if "greeted" not in st.session_state:
+    st.session_state.greeted = True
+    is_returning = bool(memories)  # returning if they have saved memories
+
+    # welcome-back message with saved profile if available
+    if is_returning:
+        if saved_profile:
+            profile_section = f"\n\nHere's your study profile from last time:\n\n{saved_profile}"
+        else:
+            profile_section = "\n\nYou don't have a generated study profile yet — click **Generate My Profile** in the sidebar anytime!"
+
+        welcome_msg = (
+            f"Welcome back, **{username}**!"
+            f"{profile_section}\n\n"
+            "Feel free to pick up where you left off — what would you like to work on today?"
+        )
+    else:
+        welcome_msg = (
+            f"Welcome {username}! \nAsk any questions about IST 387 and get answers based on verified course materials.\n\n"
+            "If the answer isn't in the materials, I'll do my best to point you in the right direction! "
+            "The assistant can also learn from the conversation to better assist you in the future!"
+        )
+
+    st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
+
 
 # display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+        st.markdown(msg["content"])
 
 
 # chat input
