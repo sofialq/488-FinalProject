@@ -3,7 +3,11 @@ import json
 import streamlit as st
 from openai import OpenAI
 from sentence_transformers import CrossEncoder
-from vectorDB import retrieve_context
+# avoid app from crashing if can't import
+try:
+    from vectorDB import retrieve_context
+except ImportError:
+    retrieve_context = None
 
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
