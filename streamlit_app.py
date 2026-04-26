@@ -30,14 +30,51 @@ st.sidebar.write(f"Active user: **{username}**")
 def load_memory(memory_file):
     if os.path.exists(memory_file):
         with open(memory_file, "r") as f:
-            return json.load(f)
-    return []
+            data = json.load(f)
+            # handle both old format (plain list) and new format (dict)
+            if isinstance(data, list):
+                return data, None
+            return data.get("memories", []), data.get("profile", None)
+    return [], None
 
-def save_memories(memory_file, memories):
+def save_memories(memory_file, memories, profile=None):
     with open(memory_file, "w") as f:
-        json.dump(memories, f)
+        json.dump({"memories": memories, "profile": profile}, f)
 
-memories = load_memory(memory_file)
+memories, saved_profile = load_memory(memory_file)
+
+if saved_profile and "profile" not in st.session_state:
+    st.session_state.profile = saved_profile
+
+
+# study profile generator
+def generate_profile(memories, username):
+    if not memories:
+        return "No learning data yet. Keep chatting to build your profile!"
+
+    memory_str = "\n".join([f"- {m}" for m in memories])
+
+    response = st.session_state.openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{
+            "role": "user",
+            "content": f"""
+            You are summarizing a student's learning profile for IST 387 at Syracuse University.
+
+            Based on the following observed struggles, write a short, encouraging 3-part profile:
+            1. **Concepts to focus on** — a bullet list of topics they should review
+            2. **Strengths** — infer what they seem comfortable with based on what ISN'T flagged
+            3. **Growth** - where you've noticed growth from the questions they've been asking/stopped asking
+            4. **Study tip** — one personalized recommendation based on their pattern of struggles
+
+            Keep it concise, friendly, and actionable. Address the student directly.
+
+            Observed struggles:
+            {memory_str}
+            """
+        }]
+    )
+    return response.choices[0].message.content
 
 
 # system message
@@ -77,7 +114,7 @@ if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
 
 
-# memory debug panel
+# memory debug panel - uncomment for debugging
 #with st.sidebar.expander("Memory Debug Panel"):
     #st.write("**Active user:**", username)
     #st.write("**Memory file:**", memory_file)
@@ -90,6 +127,20 @@ if 'openai_client' not in st.session_state:
         #st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
     #else:
         #st.write("**Last extracted memories:** None yet")
+
+
+# study profile - created with long-term memory
+st.sidebar.divider()
+with st.sidebar.expander("My Study Profile"):
+    if st.button("Generate My Profile", key="gen_profile"):
+        with st.spinner("Building your profile..."):
+            st.session_state.profile = generate_profile(memories, username)
+            save_memories(memory_file, memories, st.session_state.profile)
+
+    if "profile" in st.session_state:
+        st.markdown(st.session_state.profile)
+    elif not memories:
+        st.info("Chat with the assistant to build your profile!")
 
 
 # streamlit ui
@@ -121,10 +172,10 @@ if question:
     with st.chat_message("user"):
         st.write(question)
 
-    # build short-term memory from session history - excludes current message
+    # build short-term memory from session history - exclude the current message (last item) since it's passed separately as `question`
     conversation_history = st.session_state.messages[:-1]
 
-    # token cap
+    # cap history to last 6 interactions to avoid token overflows
     max_interactions = 6
     conversation_history = conversation_history[-(max_interactions * 2):]
 
@@ -175,10 +226,10 @@ if question:
             st.session_state.last_extracted_memories = new_memories
 
             new_memories = [m for m in new_memories if m not in memories]
-            
+
             if new_memories:
                 memories.extend(new_memories)
-                save_memories(memory_file, memories)
+                save_memories(memory_file, memories, st.session_state.get("profile"))
 
         except json.JSONDecodeError:
             st.session_state.last_extracted_memories = "JSON decode error"
@@ -186,7 +237,6 @@ if question:
 
     # refresh UI so answer appears immediately
     st.rerun()
-
 
 
 
