@@ -42,6 +42,7 @@ def save_memories(memory_file, memories, profile=None):
         json.dump({"memories": memories, "profile": profile}, f)
 
 memories, saved_profile = load_memory(memory_file)
+st.session_state.memories = memories  # make memories available to tools in RAG_Pipeline
 
 if saved_profile and "profile" not in st.session_state:
     st.session_state.profile = saved_profile
@@ -231,6 +232,7 @@ if question:
 
             if new_memories:
                 memories.extend(new_memories)
+                st.session_state.memories = memories  # keep session state in sync after new memories are added
                 save_memories(memory_file, memories, st.session_state.get("profile"))
 
         except json.JSONDecodeError:
