@@ -3,6 +3,7 @@ import streamlit as st
 from openai import OpenAI
 from sentence_transformers import CrossEncoder
 from vectorDB import retrieve_context
+import re
 
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -88,15 +89,18 @@ tools = [
 
 
 # tool execution
-def summarize_topic_from_memory(topic, memories):
-    """
-    Searches the user's long-term memory and generated profile for struggles
-    related to the given topic. Returns a plain-text summary for the LLM.
-    """
+import re
 
+def summarize_topic_from_memory(topic, memories):
     topic_lower = topic.lower()
 
-    matches = [m for m in memories if topic_lower in m.lower()] if memories else []
+    # match whole words 
+    topic_words = [w for w in topic_lower.split() if len(w) > 3]
+    matches = [
+        m for m in memories
+        if any(re.search(rf'\b{re.escape(word)}\b', m.lower()) for word in topic_words)
+    ] if memories else []
+
     profile = st.session_state.get("profile", None)
 
     result_parts = []
