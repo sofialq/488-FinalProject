@@ -31,16 +31,16 @@ ANSWER:
 """
 
 
-# tool definition
+# tool definitions
 tools = [
     {
         "type": "function",
         "function": {
             "name": "summarize_topic_from_memory",
             "description": (
-                "Reference the user's study profile to understand what topics they struggle with, "
-                "based on their long-term learning history. Use this when the user asks "
-                "what they find confusing, what they should study, or asks about their "
+                "Look up what this user has previously struggled with on a given topic, "
+                "based on their long-term learning history. Reference the generated study profile."
+                "Use this when the user asks what they find confusing, what they should study, or asks about their "
                 "progress or struggles with a specific concept."
             ),
             "parameters": {
@@ -54,11 +54,39 @@ tools = [
                 "required": ["topic"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_practice_question",
+            "description": (
+                "Generate a personalized practice question for the user based on topics "
+                "they have been struggling with. Use this when the user asks to be quizzed, "
+                "wants a practice problem, asks to test their knowledge, or says something "
+                "like 'give me a question about X' or 'can you quiz me on X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "The topic to generate a practice question about, e.g. 'ggplot', 'data joins', 'for loops in R'"
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["beginner", "intermediate", "advanced"],
+                        "description": "The difficulty level of the question. Infer this from the user's study profile if one has been generated, otherwise use memory"
+                        " — if they have many recorded struggles, start with beginner."
+                    }
+                },
+                "required": ["topic", "difficulty"]
+            }
+        }
     }
 ]
 
 
-# tool executions
+# tool execution
 def summarize_topic_from_memory(topic, memories):
     """
     Searches the user's long-term memory and generated profile for struggles
@@ -72,7 +100,6 @@ def summarize_topic_from_memory(topic, memories):
     # pull in the generated profile if one exists
     profile = st.session_state.get("profile", None)
 
-    # build the result
     result_parts = []
 
     if matches:
@@ -89,6 +116,55 @@ def summarize_topic_from_memory(topic, memories):
         )
 
     return "\n\n".join(result_parts)
+
+
+def generate_practice_question(topic, difficulty, memories, context):
+    """
+    Generates a personalized practice question on the given topic at the given
+    difficulty level, informed by the user's memory and the retrieved course context.
+    Returns a formatted question + answer key for the LLM to present to the user.
+    """
+    # pull relevant memory struggles to personalize the question
+    topic_lower = topic.lower()
+    matches = [m for m in memories if topic_lower in m.lower()] if memories else []
+    memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
+
+    prompt = f"""
+    You are a helpful teaching assistant generating a practice question for an IST 387 student at Syracuse University.
+
+    Topic: {topic}
+    Difficulty: {difficulty}
+
+    The student has the following recorded struggles related to this topic:
+    {memory_context}
+
+    Use the following course material as the basis for your question:
+    {context[:2000]}
+
+    Generate ONE practice question that:
+    - Directly tests understanding of {topic}
+    - Is appropriate for {difficulty} level
+    - Targets the student's specific recorded struggles where possible
+    - Includes a clear, step-by-step answer key
+
+    Format your response exactly like this:
+
+    **Question:**
+    <the question here>
+
+    **Answer Key:**
+    <step-by-step answer here>
+
+    **Why this question:**
+    <one sentence explaining why this targets the student's struggles>
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message.content
 
 
 # ==============================
@@ -146,14 +222,24 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         tool_name = tool_call.function.name
         tool_args = json.loads(tool_call.function.arguments)
 
-        # Execute the tool
+        memories = st.session_state.get("memories", [])
+
+        # Execute the correct tool
         if tool_name == "summarize_topic_from_memory":
-            memories = st.session_state.get("memories", [])
             tool_result = summarize_topic_from_memory(tool_args["topic"], memories)
+
+        elif tool_name == "generate_practice_question":
+            tool_result = generate_practice_question(
+                topic=tool_args["topic"],
+                difficulty=tool_args["difficulty"],
+                memories=memories,
+                context=context
+            )
+
         else:
             tool_result = "Tool not found."
 
-        # Append the assistant's tool call and the tool result to message
+        # Append assistant tool call as a proper dict (fixes BadRequestError)
         messages.append({
             "role": "assistant",
             "content": None,
@@ -168,6 +254,8 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
                 }
             ]
         })
+
+        # Append tool result
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
