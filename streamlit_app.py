@@ -78,18 +78,18 @@ if 'openai_client' not in st.session_state:
 
 
 # memory debug panel
-with st.sidebar.expander("🧠 Memory Debug Panel"):
-    st.write("**Active user:**", username)
-    st.write("**Memory file:**", memory_file)
-    st.write("**File exists:**", os.path.exists(memory_file))
-    st.write("**Current working directory:**", os.getcwd())
-    st.write("**Directory writable:**", os.access(os.getcwd(), os.W_OK))
-    st.write("**Loaded memories:**", memories)
+#with st.sidebar.expander("Memory Debug Panel"):
+    #st.write("**Active user:**", username)
+    #st.write("**Memory file:**", memory_file)
+    #st.write("**File exists:**", os.path.exists(memory_file))
+    #st.write("**Current working directory:**", os.getcwd())
+    #st.write("**Directory writable:**", os.access(os.getcwd(), os.W_OK))
+    #st.write("**Loaded memories:**", memories)
 
-    if "last_extracted_memories" in st.session_state:
-        st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
-    else:
-        st.write("**Last extracted memories:** None yet")
+    #if "last_extracted_memories" in st.session_state:
+        #st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
+    #else:
+        #st.write("**Last extracted memories:** None yet")
 
 
 # streamlit ui
@@ -121,10 +121,17 @@ if question:
     with st.chat_message("user"):
         st.write(question)
 
-    # generate answer using RAG + memory
+    # build short-term memory from session history - excludes current message
+    conversation_history = st.session_state.messages[:-1]
+
+    # token cap
+    max_interactions = 6
+    conversation_history = conversation_history[-(max_interactions * 2):]
+
+    # generate answer using RAG + short-term memory + long-term memory
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
-            answer, _ = rag_pipeline(question, system_message)
+            answer, _ = rag_pipeline(question, system_message, conversation_history=conversation_history)
 
         st.write(answer)
 
