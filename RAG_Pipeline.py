@@ -38,10 +38,11 @@ tools = [
         "function": {
             "name": "summarize_topic_from_memory",
             "description": (
-                "Look up what this user has previously struggled with on a given topic, "
-                "based on their long-term learning history. Reference the generated study profile."
-                "Use this when the user asks what they find confusing, what they should study, or asks about their "
-                "progress or struggles with a specific concept."
+                "ALWAYS use this tool when the user asks where they have been struggling, "
+                "what they find confusing, what topics they should focus on, or anything about "
+                "their learning history or progress. Do not answer memory-related questions from "
+                "general knowledge — always look up the user's actual recorded history first. "
+                "Refernce the user's study profile if available."
             ),
             "parameters": {
                 "type": "object",
@@ -239,7 +240,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         else:
             tool_result = "Tool not found."
 
-        # Append assistant tool call as a proper dict (fixes BadRequestError)
+        # Append assistant tool call as a proper dict 
         messages.append({
             "role": "assistant",
             "content": None,
