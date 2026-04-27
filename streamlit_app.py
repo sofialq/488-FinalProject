@@ -14,7 +14,7 @@ openai_api_key = st.secrets["OPENAI_API_KEY"]
 st.sidebar.header("User Settings")
 
 username = st.sidebar.text_input("Enter your username:", key="username_input")
-st.caption("Refresh the application if looking to change users.")
+st.sidebar.caption("Refresh the application if looking to change users.")
 
 if not username:
     st.warning("Please enter a username to begin.")
