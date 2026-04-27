@@ -15,6 +15,9 @@ st.sidebar.header("User Settings")
 
 username = st.sidebar.text_input("Enter your username:", key="username_input")
 
+if username:
+    st.sidebar.caption("Refresh the application if looking to change users.")
+
 if not username:
     st.warning("Please enter a username to begin.")
     st.stop()
