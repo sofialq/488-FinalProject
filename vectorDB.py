@@ -7,7 +7,8 @@ from openai import OpenAI
 import os
 
 # ensure API key always exists before any embedding calls
-st.session_state.setdefault("openai_api_key", os.getenv("OPENAI_API_KEY", ""))
+if "openai_api_key" not in st.session_state:
+    st.session_state["openai_api_key"] = os.getenv("OPENAI_API_KEY", "")
 
 # SQLite fix for Streamlit Cloud
 __import__('pysqlite3')

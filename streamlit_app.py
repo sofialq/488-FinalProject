@@ -17,6 +17,10 @@ openai_api_key = st.sidebar.text_input(
     key="api_key_input"
 )
 
+if not openai_api_key and not username:
+    st.warning("Please enter your OpenAI API key and username to begin.")
+    st.stop()
+
 if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
