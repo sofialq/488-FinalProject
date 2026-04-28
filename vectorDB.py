@@ -6,9 +6,6 @@ import openai
 import chromadb
 from chromadb.utils import embedding_functions
 
-# use the api key entered by the user in the sidebar
-openai_api_key = st.session_state.get("api_key_input", "")
-
 
 # SQLite fix for Streamlit Cloud
 if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
@@ -19,27 +16,29 @@ if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
         pass
 
 
-# OpenAI client setup
-if 'openai_client' not in st.session_state:
-    st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
-
-
-# chromaDB setup
-embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=openai_api_key,
-    model_name="text-embedding-ada-002"
-)
-
+# chromaDB client — no embedding function needed at module level
 chroma_client = chromadb.PersistentClient(
     path="./ChromaDB_for_HelpBot"
 )
 
-collection = chroma_client.get_or_create_collection(
-    name="IST387Collection",
-    embedding_function=embedding_fn
-)
-
 if "collection" not in st.session_state:
+    # ensure user has entered key first
+    openai_api_key = st.session_state.get("api_key_input", "")
+
+    # OpenAI client setup
+    if 'openai_client' not in st.session_state:
+        st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
+
+    embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=openai_api_key,
+        model_name="text-embedding-ada-002"
+    )
+
+    collection = chroma_client.get_or_create_collection(
+        name="IST387Collection",
+        embedding_function=embedding_fn
+    )
+
     st.session_state.collection = collection
 
 
@@ -115,6 +114,7 @@ if "ingestion_done" not in st.session_state:
         newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
 
     st.session_state.ingestion_done = True
+
 
 # retrieval
 def retrieve_context(query, k=4):
