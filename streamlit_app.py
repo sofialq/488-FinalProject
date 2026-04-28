@@ -101,8 +101,7 @@ embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
 )
 
 chroma_client = chromadb.PersistentClient(
-    path="./ChromaDB_for_HelpBot",
-    settings=Settings(anonymized_telemetry=False)
+    path="./ChromaDB_for_HelpBot"
 )
 
 collection = chroma_client.get_or_create_collection(
