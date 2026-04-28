@@ -6,7 +6,8 @@ import openai
 import chromadb
 from chromadb.utils import embedding_functions
 
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+# use the api key entered by the user in the sidebar
+openai_api_key = st.session_state.get("api_key_input", "")
 
 
 # SQLite fix for Streamlit Cloud
@@ -115,7 +116,7 @@ if "ingestion_done" not in st.session_state:
 
     st.session_state.ingestion_done = True
 
-# retrieval 
+# retrieval
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
 

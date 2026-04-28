@@ -6,8 +6,6 @@ from chromadb.utils import embedding_functions
 from RAG_Pipeline import rag_pipeline
 import openai
 
-openai_api_key = st.secrets["OPENAI_API_KEY"]
-
 
 # user selection for user-based memory
 st.sidebar.header("User Settings")
@@ -19,6 +17,19 @@ if username:
 
 if not username:
     st.warning("Please enter a username to begin.")
+    st.stop()
+
+# api key input
+st.sidebar.header("API Settings")
+openai_api_key = st.sidebar.text_input(
+    "Enter your OpenAI API Key:",
+    type="password",
+    placeholder="sk-proj-...",
+    key="api_key_input"
+)
+
+if not openai_api_key:
+    st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
 
 # normalize username for file naming
@@ -96,7 +107,7 @@ if memories:
 
 # initialize chromaDB
 embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=st.secrets["OPENAI_API_KEY"],
+    api_key=openai_api_key,
     model_name="text-embedding-ada-002"
 )
 
@@ -265,8 +276,4 @@ if question:
 
     # refresh UI so answer appears immediately
     st.rerun()
-
-
-
-
 
