@@ -3,7 +3,6 @@ import json
 import os
 import chromadb
 from chromadb.utils import embedding_functions
-from RAG_Pipeline import rag_pipeline
 import openai
 
 
@@ -11,13 +10,6 @@ import openai
 st.sidebar.header("User Settings")
 
 username = st.sidebar.text_input("Enter your username:", key="username_input")
-
-if username:
-    st.sidebar.caption("Refresh the application if looking to change users.")
-
-if not username:
-    st.warning("Please enter a username to begin.")
-    st.stop()
 
 # api key input
 st.sidebar.header("API Settings")
@@ -31,6 +23,17 @@ openai_api_key = st.sidebar.text_input(
 if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
+
+from RAG_Pipeline import rag_pipeline
+
+
+if username:
+    st.sidebar.caption("Refresh the application if looking to change users.")
+
+if not username:
+    st.warning("Please enter a username to begin.")
+    st.stop()
+
 
 # normalize username for file naming
 username = username.strip().lower().replace(" ", "_")
