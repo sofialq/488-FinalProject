@@ -21,19 +21,18 @@ openai_api_key = st.sidebar.text_input(
     type="password",
     placeholder="sk-proj-...",
     key="api_key_input"
-)
+).strip()  
 
-if not openai_api_key and not username:
+if not openai_api_key or not username:
     st.warning("Please enter your OpenAI API key and username to begin.")
     st.stop()
 
-if not openai_api_key:
-    st.warning("Please enter your OpenAI API key to begin.")
-else:
-    st.session_state["openai_api_key"] = openai_api_key
-
-# always store key in session_state
 st.session_state["openai_api_key"] = openai_api_key
+
+# initialize OpenAI client 
+if 'openai_client' not in st.session_state or st.session_state.get("last_key") != openai_api_key:
+    st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+    st.session_state["last_key"] = openai_api_key # Track key changes
 
 
 if username:
@@ -260,8 +259,9 @@ def summarize_topic_from_memory(topic, memories):
 
 
 def generate_practice_question(topic, difficulty, memories, context, api_key=""):
-    client = OpenAI(api_key=st.session_state["openai_api_key"])
-
+    current_key = api_key if api_key else st.session_state.get("openai_api_key")
+    client = OpenAI(api_key=current_key)
+    
     topic_lower = topic.lower()
     matches = [m for m in memories if topic_lower in m.lower()] if memories else []
     memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
@@ -302,8 +302,14 @@ def generate_practice_question(topic, difficulty, memories, context, api_key="")
 # RAG PIPELINE FUNCTION
 # ==============================
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api_key=""):
-
-    client = OpenAI(api_key=st.session_state["openai_api_key"])
+    current_key = api_key if api_key else st.session_state.get("openai_api_key")
+    
+    if not current_key:
+        return "Authentication Error: No API Key found.", None
+        
+    client = OpenAI(api_key=current_key)
+    
+    # ... rest of your embedding and chat logic ...
 
     query_embedding_response = client.embeddings.create(
         input=query,
@@ -651,5 +657,3 @@ if question:
             st.session_state.last_extracted_memories = "JSON decode error"
 
 
-    # refresh UI so answer appears immediately
-    st.rerun()
