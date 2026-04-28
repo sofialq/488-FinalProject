@@ -596,7 +596,7 @@ if question:
                 question,
                 system_message,
                 conversation_history=conversation_history,
-                api_key=openai_api_key
+                api_key=st.session_state["openai_api_key"]
             )
 
         st.write(answer)
