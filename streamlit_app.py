@@ -29,7 +29,8 @@ if not openai_api_key and not username:
 
 if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
-    st.stop()
+else:
+    st.session_state["openai_api_key"] = openai_api_key
 
 # always store key in session_state
 st.session_state["openai_api_key"] = openai_api_key
