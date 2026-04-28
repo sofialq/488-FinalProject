@@ -1,8 +1,14 @@
 import streamlit as st
 import json
 import os
+import sys
 import chromadb
 import openai
+import pdfplumber
+from pathlib import Path
+from openai import OpenAI
+from sentence_transformers import CrossEncoder
+import re
 
 # user selection for user-based memory
 st.sidebar.header("User Settings")
@@ -28,8 +34,6 @@ if not openai_api_key:
 # make key available to vectorDB + RAG
 st.session_state["openai_api_key"] = openai_api_key
 
-from RAG_Pipeline import rag_pipeline
-
 
 if username:
     st.sidebar.caption("Refresh the application if looking to change users.")
@@ -44,7 +48,476 @@ memory_file = f"memory_{username}.json"
 
 st.sidebar.write(f"Active user: **{username}**")
 
+## vectorDB 
+# SQLite fix for Streamlit Cloud
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
+# chromaDB client — no embedding function needed
+chroma_client = chromadb.PersistentClient(path="./ChromaDB_for_HelpBot")
+collection = chroma_client.get_or_create_collection(name="IST387Collection")
+
+if "collection" not in st.session_state:
+    st.session_state.collection = collection
+
+
+# text processing
+def clean_text(text):
+    return " ".join(text.split())
+
+
+def extract_text_from_pdf_path(pdf_path):
+    text = ""
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + " "
+    return clean_text(text)
+
+
+def chunk_text(text, chunk_size=800, overlap=150):
+    words = text.split()
+    chunks = []
+    start = 0
+    while start < len(words):
+        end = start + chunk_size
+        chunk = " ".join(words[start:end])
+        chunks.append(chunk)
+        start += chunk_size - overlap
+    return chunks
+
+
+def get_embedding(text, api_key):
+    client = OpenAI(api_key=api_key)
+    response = client.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"
+    )
+    return response.data[0].embedding
+
+
+# ingestion functions
+def get_ingested_sources(collection):
+    existing = collection.get()["metadatas"]
+    return set(m["source"] for m in existing if m)
+
+
+def add_to_collection(collection, text, file_name, api_key):
+    chunks = chunk_text(text)
+    ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
+    metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
+
+    embeddings = [get_embedding(chunk, api_key) for chunk in chunks]
+
+    try:
+        collection.add(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas,
+            embeddings=embeddings
+        )
+        print(f"Added {len(chunks)} chunks from {file_name}")
+    except Exception as e:
+        print(f"Error adding {file_name}: {e}")
+
+
+def load_pdfs(folder_path, collection, api_key):
+    folder = Path(folder_path)
+    already_ingested = get_ingested_sources(collection)
+
+    newly_ingested = []
+    skipped = []
+
+    for pdf_file in folder.glob("*.pdf"):
+        if pdf_file.name in already_ingested:
+            skipped.append(pdf_file.name)
+            print(f"Skipping (already ingested): {pdf_file.name}")
+            continue
+
+        print(f"Ingesting: {pdf_file.name}")
+        text = extract_text_from_pdf_path(pdf_file)
+        add_to_collection(collection, text, pdf_file.name, api_key)
+        newly_ingested.append(pdf_file.name)
+
+    return newly_ingested, skipped
+
+
+# ingestion - runs once per session
+if "ingestion_done" not in st.session_state:
+    with st.spinner("Checking and ingesting documents..."):
+        newly_ingested, skipped = load_pdfs(
+            "./IST387_documents",
+            st.session_state.collection,
+            st.session_state["openai_api_key"]
+        )
+    st.session_state.ingestion_done = True
+
+
+# retrieval with manual embeddings
+def retrieve_context(query, k=4):
+    collection = st.session_state.collection
+    api_key = st.session_state["openai_api_key"]
+
+    query_embedding = get_embedding(query, api_key)
+
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=k
+    )
+
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+
+    if not docs:
+        return None, None
+
+    return docs, metas
+
+
+
+## querying collection for testing - uncomment to test
+#topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
+
+#if topic:
+    #client = st.session_state.openai_client
+    #response = client.embeddings.create(
+        #input=topic,
+        #model='text-embedding-3-small'
+    #)
+
+    # get the embedding
+    #query_embedding = response.data[0].embedding
+
+    # get text related to this question (this prompt)
+    #results = collection.query(
+        #query_embeddings=[query_embedding],
+        #n_results=3
+    #)
+
+    # display the results
+    #st.subheader(f'Results for: {topic}')
+
+    #for i in range(len(results['documents'][0])):
+        #doc = results['documents'][0][i]
+        #doc_id = results['ids'][0][i]
+
+        #st.write(f'**{i+1}. {doc_id}**')
+        #st.write(doc)
+
+#else:
+    #st.info('Enter a topic in the sidebar to search the collection')
+
+## rag pipeline
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+
+def build_prompt(query, context):
+    return f"""
+You are a helpful teaching assistant for IST 387 at Syracuse University. 
+Use the following verified course materials to answer the question. If you don't know the answer, give the user suggestions as to where they may find the answer. 
+If providing any code, make sure to explain it clearly and step-by-step. Always use the provided context to answer, and do not rely on any information outside of it.
+Always cite your sources from the provided context. Ignore any names or extra information not relevant to the course content."
+
+---
+
+CONTEXT:
+{context}
+
+---
+
+QUESTION:
+{query}
+
+---
+
+ANSWER:
+"""
+
+
+# tool definition
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_topic_from_memory",
+            "description": (
+                "Look up what this user has previously struggled with on a given topic, "
+                "based on their long-term learning history. Use this when the user asks "
+                "what they find confusing, what they should study, or asks about their "
+                "progress or struggles with a specific concept."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "The concept or topic to look up in the user's memory, e.g. 'joins', 'for loops', 'ggplot'"
+                    }
+                },
+                "required": ["topic"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_practice_question",
+            "description": (
+                "Generate a personalized practice question for the user based on a topic "
+                "they have been struggling with. Use this when the user asks to be quizzed, "
+                "wants a practice problem, asks to test their knowledge, or says something "
+                "like 'give me a question about X' or 'can you quiz me on X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "The topic to generate a practice question about, e.g. 'ggplot', 'data joins', 'for loops in R'"
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["beginner", "intermediate", "advanced"],
+                        "description": "The difficulty level of the question. Infer this from the user's memory — if they have many recorded struggles, start with beginner."
+                    }
+                },
+                "required": ["topic", "difficulty"]
+            }
+        }
+    }
+]
+
+
+# tool execution
+def summarize_topic_from_memory(topic, memories):
+    """
+    Searches the user's long-term memory for struggles related to the given topic.
+    Uses whole-word matching to prevent false matches (e.g. "strings" vs "struggling").
+    Never uses the generated profile to avoid hallucination.
+    """
+    topic_lower = topic.lower()
+
+    # match whole words only — prevents "strings" matching inside "struggling"
+    topic_words = [w for w in topic_lower.split() if len(w) > 3]
+    matches = [
+        m for m in memories
+        if any(re.search(rf'\b{re.escape(word)}\b', m.lower()) for word in topic_words)
+    ] if memories else []
+
+    if matches:
+        match_str = "\n".join([f"- {m}" for m in matches])
+        return f"Recorded struggles related to '{topic}':\n{match_str}"
+    else:
+        return (
+            f"NO_MATCH: No recorded struggles found for '{topic}'. "
+            f"You MUST respond with exactly: 'You have no recorded history of struggling with {topic}.' "
+            f"Do not reference the student profile. Do not invent struggles. Do not elaborate."
+        )
+
+
+def generate_practice_question(topic, difficulty, memories, context, api_key=""):
+    """
+    Generates a personalized practice question on the given topic at the given
+    difficulty level, informed by the user's memory and the retrieved course context.
+    Returns a formatted question + answer key for the LLM to present to the user.
+    """
+    # use the api key passed directly as a parameter
+    client = OpenAI(api_key=api_key)
+
+    # pull relevant memory struggles to personalize the question
+    topic_lower = topic.lower()
+    matches = [m for m in memories if topic_lower in m.lower()] if memories else []
+    memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
+
+    prompt = f"""
+        You are generating a practice question for an IST 387 student at Syracuse University.
+
+        Topic: {topic}
+        Difficulty: {difficulty}
+
+        The student has the following recorded struggles related to this topic:
+        {memory_context}
+
+        Use the following course material as the basis for your question:
+        {context[:2000]}
+
+        Generate ONE practice question that:
+        - Directly tests understanding of {topic}
+        - Is appropriate for {difficulty} level
+        - Targets the student's specific recorded struggles where possible
+        - Includes a clear, step-by-step answer key
+
+        Format your response exactly like this:
+
+        **Question:**
+        <the question here>
+
+        **Answer Key:**
+        <step-by-step answer here>
+
+        **Why this question:**
+        <one sentence explaining why this targets the student's struggles>
+        """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message.content
+
+
+# ==============================
+# RAG PIPELINE FUNCTION
+# ==============================
+def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api_key=""):
+
+    # use the api key passed directly as a parameter
+    client = OpenAI(api_key=api_key)
+
+    # Top-k chunks — use manual embedding to avoid ChromaDB API key issues
+    query_embedding_response = client.embeddings.create(
+        input=query,
+        model="text-embedding-3-small"
+    )
+    query_embedding = query_embedding_response.data[0].embedding
+
+    results = st.session_state.collection.query(
+        query_embeddings=[query_embedding],
+        n_results=10
+    )
+
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+
+    # Chunk rerank
+    docs, metas = rerank(query, docs, metas, top_n=4)
+
+    context = "\n\n---\n\n".join(docs)
+    sources = metas
+
+    if not context:
+        return "No relevant context found.", None
+
+    prompt = build_prompt(query, context)
+
+    # Build messages list with short-term memory injected
+    messages = []
+
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+
+    if conversation_history:
+        for turn in conversation_history:
+            if turn["role"] in ("user", "assistant"):
+                messages.append({"role": turn["role"], "content": turn["content"]})
+
+    # Add the current question with RAG context
+    messages.append({"role": "user", "content": prompt})
+
+    # First LLM call — may invoke a tool
+    memory_keywords = ["struggling", "struggle", "confused", "where have i", "where am i",
+                    "what have i", "what am i", "focus on", "should i study", "my weakness"]
+    is_memory_query = any(kw in query.lower() for kw in memory_keywords)
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        tools=tools,
+        tool_choice={
+            "type": "function",
+            "function": {"name": "summarize_topic_from_memory"}
+        } if is_memory_query else "auto"
+    )
+
+    response_message = response.choices[0].message
+
+    # Check if the LLM wants to call a tool
+    if response_message.tool_calls:
+        tool_call = response_message.tool_calls[0]
+        tool_name = tool_call.function.name
+        tool_args = json.loads(tool_call.function.arguments)
+
+        memories = st.session_state.get("memories", [])
+
+        # Execute the correct tool
+        if tool_name == "summarize_topic_from_memory":
+            tool_result = summarize_topic_from_memory(tool_args["topic"], memories)
+
+            # bypass second LLM call entirely if no match found — prevents hallucination
+            if tool_result.startswith("NO_MATCH:"):
+                return f"You have no recorded history of struggling with {tool_args['topic']}.", sources
+
+        elif tool_name == "generate_practice_question":
+            tool_result = generate_practice_question(
+                topic=tool_args["topic"],
+                difficulty=tool_args["difficulty"],
+                memories=memories,
+                context=context,
+                api_key=api_key
+            )
+
+        else:
+            tool_result = "Tool not found."
+
+        # Append assistant tool call as a proper dict (fixes BadRequestError)
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": tool_call.function.arguments
+                    }
+                }
+            ]
+        })
+
+        # Append tool result
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": tool_result
+        })
+
+        # Second LLM call — now with the tool result included
+        second_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        answer = second_response.choices[0].message.content
+
+    else:
+        # No tool call — use the first response directly
+        answer = response_message.content
+
+    return answer, sources
+
+
+def rerank(query, docs, metadatas, top_n=4):
+
+    if not docs:
+        return [], []
+
+    pairs = [(query, doc) for doc in docs]
+
+    # Rerank scoring
+    scores = reranker.predict(pairs)
+    scored_items = list(zip(docs, metadatas, scores))
+    scored_items.sort(key=lambda x: x[2], reverse=True)
+
+    top_items = scored_items[:top_n]
+
+    reranked_docs = [item[0] for item in top_items]
+    reranked_meta = [item[1] for item in top_items]
+
+    return reranked_docs, reranked_meta
+
+## streamlit app
 # load + save memory
 def load_memory(memory_file):
     if os.path.exists(memory_file):
