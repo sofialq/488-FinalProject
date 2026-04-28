@@ -21,10 +21,14 @@ openai_api_key = st.sidebar.text_input(
     type="password",
     placeholder="sk-proj-...",
     key="api_key_input"
-).strip()  
+).strip()
 
 if not openai_api_key or not username:
     st.warning("Please enter your OpenAI API key and username to begin.")
+    st.stop()
+
+if not openai_api_key.startswith("sk-"):
+    st.warning("Please enter a valid OpenAI API key (should start with 'sk-').")
     st.stop()
 
 st.session_state["openai_api_key"] = openai_api_key
@@ -32,8 +36,7 @@ st.session_state["openai_api_key"] = openai_api_key
 # initialize OpenAI client 
 if 'openai_client' not in st.session_state or st.session_state.get("last_key") != openai_api_key:
     st.session_state.openai_client = OpenAI(api_key=openai_api_key)
-    st.session_state["last_key"] = openai_api_key # Track key changes
-
+    st.session_state["last_key"] = openai_api_key
 
 if username:
     st.sidebar.caption("Refresh the application if looking to change users.")
@@ -48,7 +51,7 @@ memory_file = f"memory_{username}.json"
 
 st.sidebar.write(f"Active user: **{username}**")
 
-## vectorDB 
+## vectorDB
 # SQLite fix for Streamlit Cloud
 __import__('pysqlite3')
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -261,7 +264,7 @@ def summarize_topic_from_memory(topic, memories):
 def generate_practice_question(topic, difficulty, memories, context, api_key=""):
     current_key = api_key if api_key else st.session_state.get("openai_api_key")
     client = OpenAI(api_key=current_key)
-    
+
     topic_lower = topic.lower()
     matches = [m for m in memories if topic_lower in m.lower()] if memories else []
     memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
@@ -298,18 +301,33 @@ def generate_practice_question(topic, difficulty, memories, context, api_key="")
     return response.choices[0].message.content
 
 
+def rerank(query, docs, metadatas, top_n=4):
+    if not docs:
+        return [], []
+
+    pairs = [(query, doc) for doc in docs]
+    scores = reranker.predict(pairs)
+    scored_items = list(zip(docs, metadatas, scores))
+    scored_items.sort(key=lambda x: x[2], reverse=True)
+
+    top_items = scored_items[:top_n]
+
+    reranked_docs = [item[0] for item in top_items]
+    reranked_meta = [item[1] for item in top_items]
+
+    return reranked_docs, reranked_meta
+
+
 # ==============================
 # RAG PIPELINE FUNCTION
 # ==============================
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api_key=""):
-    current_key = api_key if api_key else st.session_state.get("openai_api_key")
-    
-    if not current_key:
-        return "Authentication Error: No API Key found.", None
-        
+    current_key = api_key or st.session_state.get("openai_api_key", "")
+
+    if not current_key or not current_key.startswith("sk-"):
+        return "Error: Missing or invalid OpenAI API key. Please re-enter it in the sidebar.", None
+
     client = OpenAI(api_key=current_key)
-    
-    # ... rest of your embedding and chat logic ...
 
     query_embedding_response = client.embeddings.create(
         input=query,
@@ -348,7 +366,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
     messages.append({"role": "user", "content": prompt})
 
     memory_keywords = ["struggling", "struggle", "confused", "where have i", "where am i",
-                    "what have i", "what am i", "focus on", "should i study", "my weakness"]
+                       "what have i", "what am i", "focus on", "should i study", "my weakness"]
     is_memory_query = any(kw in query.lower() for kw in memory_keywords)
 
     response = client.chat.completions.create(
@@ -382,7 +400,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
                 difficulty=tool_args["difficulty"],
                 memories=memories,
                 context=context,
-                api_key=st.session_state["openai_api_key"] 
+                api_key=current_key
             )
 
         else:
@@ -420,24 +438,6 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
 
     return answer, sources
 
-
-def rerank(query, docs, metadatas, top_n=4):
-
-    if not docs:
-        return [], []
-
-    pairs = [(query, doc) for doc in docs]
-
-    scores = reranker.predict(pairs)
-    scored_items = list(zip(docs, metadatas, scores))
-    scored_items.sort(key=lambda x: x[2], reverse=True)
-
-    top_items = scored_items[:top_n]
-
-    reranked_docs = [item[0] for item in top_items]
-    reranked_meta = [item[1] for item in top_items]
-
-    return reranked_docs, reranked_meta
 
 ## streamlit app
 # load + save memory
@@ -507,24 +507,6 @@ if memories:
     )
 
 
-# initialize chromaDB (no embedding function needed — manual embeddings used)
-chroma_client = chromadb.PersistentClient(
-    path="./ChromaDB_for_HelpBot"
-)
-
-collection = chroma_client.get_or_create_collection(
-    name="IST387Collection"
-)
-
-if "collection" not in st.session_state:
-    st.session_state.collection = collection
-
-
-# initialize OpenAI client
-if 'openai_client' not in st.session_state:
-    st.session_state.openai_client = openai.OpenAI(api_key=st.session_state["openai_api_key"])
-
-
 # study profile - created with long-term memory
 st.sidebar.divider()
 with st.sidebar.expander("My Study Profile"):
@@ -589,9 +571,9 @@ if question:
     with st.chat_message("user"):
         st.write(question)
 
-    # build short-term memory from session history - exclude the current message (last item) since it's passed separately as `question`
+    # build short-term memory from session history - exclude the current message (last item)
     conversation_history = st.session_state.messages[:-1]
-    
+
     # cap history to last 6 interactions to avoid token overflows
     max_interactions = 6
     conversation_history = conversation_history[-(max_interactions * 2):]
@@ -613,7 +595,6 @@ if question:
         "role": "assistant",
         "content": answer
     })
-
 
     # memory extraction
     if len(st.session_state.messages) >= 2:
