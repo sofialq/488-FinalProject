@@ -123,7 +123,7 @@ def generate_practice_question(topic, difficulty, memories, context):
     Returns a formatted question + answer key for the LLM to present to the user.
     """
     # initialize client using the key entered by the user
-    client = OpenAI(api_key=st.session_state.get("api_key_input", ""))
+    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
 
     # pull relevant memory struggles to personalize the question
     topic_lower = topic.lower()
@@ -174,7 +174,7 @@ def generate_practice_question(topic, difficulty, memories, context):
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
 
     # initialize client using the key entered by the user
-    client = OpenAI(api_key=st.session_state.get("api_key_input", ""))
+    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
 
     # Top-k chunks — use manual embedding to avoid ChromaDB API key issues
     query_embedding_response = client.embeddings.create(

@@ -12,7 +12,6 @@ st.sidebar.header("User Settings")
 username = st.sidebar.text_input("Enter your username:", key="username_input")
 
 # api key input
-st.sidebar.header("API Settings")
 openai_api_key = st.sidebar.text_input(
     "Enter your OpenAI API Key:",
     type="password",
@@ -23,6 +22,8 @@ openai_api_key = st.sidebar.text_input(
 if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
+
+st.session_state["openai_api_key"] = openai_api_key
 
 from RAG_Pipeline import rag_pipeline
 

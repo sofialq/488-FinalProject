@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import pdfplumber
 import chromadb
+from openai import OpenAI
 
 # SQLite fix for Streamlit Cloud
 __import__('pysqlite3')
@@ -45,8 +46,7 @@ def chunk_text(text, chunk_size=800, overlap=150):
 
 
 def get_embedding(text):
-    """Generate an embedding using the OpenAI client stored in session state."""
-    client = st.session_state.openai_client
+    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
     response = client.embeddings.create(
         input=text,
         model="text-embedding-3-small"
