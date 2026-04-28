@@ -31,7 +31,7 @@ if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
 
-# make key available to vectorDB + RAG
+# always store key in session_state
 st.session_state["openai_api_key"] = openai_api_key
 
 
@@ -89,7 +89,7 @@ def chunk_text(text, chunk_size=800, overlap=150):
 
 
 def get_embedding(text, api_key):
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=st.session_state["openai_api_key"])
     response = client.embeddings.create(
         input=text,
         model="text-embedding-3-small"
@@ -108,7 +108,7 @@ def add_to_collection(collection, text, file_name, api_key):
     ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
-    embeddings = [get_embedding(chunk, api_key) for chunk in chunks]
+    embeddings = [get_embedding(chunk, st.session_state["openai_api_key"]) for chunk in chunks]
 
     try:
         collection.add(
@@ -137,7 +137,8 @@ def load_pdfs(folder_path, collection, api_key):
 
         print(f"Ingesting: {pdf_file.name}")
         text = extract_text_from_pdf_path(pdf_file)
-        add_to_collection(collection, text, pdf_file.name, api_key)
+
+        add_to_collection(collection, text, pdf_file.name, st.session_state["openai_api_key"])
         newly_ingested.append(pdf_file.name)
 
     return newly_ingested, skipped
@@ -157,9 +158,8 @@ if "ingestion_done" not in st.session_state:
 # retrieval with manual embeddings
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
-    api_key = st.session_state["openai_api_key"]
 
-    query_embedding = get_embedding(query, api_key)
+    query_embedding = get_embedding(query, st.session_state["openai_api_key"])
 
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -174,39 +174,6 @@ def retrieve_context(query, k=4):
 
     return docs, metas
 
-
-
-## querying collection for testing - uncomment to test
-#topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
-
-#if topic:
-    #client = st.session_state.openai_client
-    #response = client.embeddings.create(
-        #input=topic,
-        #model='text-embedding-3-small'
-    #)
-
-    # get the embedding
-    #query_embedding = response.data[0].embedding
-
-    # get text related to this question (this prompt)
-    #results = collection.query(
-        #query_embeddings=[query_embedding],
-        #n_results=3
-    #)
-
-    # display the results
-    #st.subheader(f'Results for: {topic}')
-
-    #for i in range(len(results['documents'][0])):
-        #doc = results['documents'][0][i]
-        #doc_id = results['ids'][0][i]
-
-        #st.write(f'**{i+1}. {doc_id}**')
-        #st.write(doc)
-
-#else:
-    #st.info('Enter a topic in the sidebar to search the collection')
 
 ## rag pipeline
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -243,18 +210,11 @@ tools = [
             "name": "summarize_topic_from_memory",
             "description": (
                 "Look up what this user has previously struggled with on a given topic, "
-                "based on their long-term learning history. Use this when the user asks "
-                "what they find confusing, what they should study, or asks about their "
-                "progress or struggles with a specific concept."
+                "based on their long-term learning history."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "topic": {
-                        "type": "string",
-                        "description": "The concept or topic to look up in the user's memory, e.g. 'joins', 'for loops', 'ggplot'"
-                    }
-                },
+                "properties": {"topic": {"type": "string"}},
                 "required": ["topic"]
             }
         }
@@ -264,23 +224,13 @@ tools = [
         "function": {
             "name": "generate_practice_question",
             "description": (
-                "Generate a personalized practice question for the user based on a topic "
-                "they have been struggling with. Use this when the user asks to be quizzed, "
-                "wants a practice problem, asks to test their knowledge, or says something "
-                "like 'give me a question about X' or 'can you quiz me on X'."
+                "Generate a personalized practice question for the user."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {
-                        "type": "string",
-                        "description": "The topic to generate a practice question about, e.g. 'ggplot', 'data joins', 'for loops in R'"
-                    },
-                    "difficulty": {
-                        "type": "string",
-                        "enum": ["beginner", "intermediate", "advanced"],
-                        "description": "The difficulty level of the question. Infer this from the user's memory — if they have many recorded struggles, start with beginner."
-                    }
+                    "topic": {"type": "string"},
+                    "difficulty": {"type": "string", "enum": ["beginner", "intermediate", "advanced"]}
                 },
                 "required": ["topic", "difficulty"]
             }
@@ -289,17 +239,10 @@ tools = [
 ]
 
 
-# tool execution
 def summarize_topic_from_memory(topic, memories):
-    """
-    Searches the user's long-term memory for struggles related to the given topic.
-    Uses whole-word matching to prevent false matches (e.g. "strings" vs "struggling").
-    Never uses the generated profile to avoid hallucination.
-    """
     topic_lower = topic.lower()
-
-    # match whole words only — prevents "strings" matching inside "struggling"
     topic_words = [w for w in topic_lower.split() if len(w) > 3]
+
     matches = [
         m for m in memories
         if any(re.search(rf'\b{re.escape(word)}\b', m.lower()) for word in topic_words)
@@ -312,20 +255,12 @@ def summarize_topic_from_memory(topic, memories):
         return (
             f"NO_MATCH: No recorded struggles found for '{topic}'. "
             f"You MUST respond with exactly: 'You have no recorded history of struggling with {topic}.' "
-            f"Do not reference the student profile. Do not invent struggles. Do not elaborate."
         )
 
 
 def generate_practice_question(topic, difficulty, memories, context, api_key=""):
-    """
-    Generates a personalized practice question on the given topic at the given
-    difficulty level, informed by the user's memory and the retrieved course context.
-    Returns a formatted question + answer key for the LLM to present to the user.
-    """
-    # use the api key passed directly as a parameter
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=st.session_state["openai_api_key"])
 
-    # pull relevant memory struggles to personalize the question
     topic_lower = topic.lower()
     matches = [m for m in memories if topic_lower in m.lower()] if memories else []
     memory_context = "\n".join([f"- {m}" for m in matches]) if matches else "No specific struggles recorded for this topic."
@@ -341,12 +276,6 @@ def generate_practice_question(topic, difficulty, memories, context, api_key="")
 
         Use the following course material as the basis for your question:
         {context[:2000]}
-
-        Generate ONE practice question that:
-        - Directly tests understanding of {topic}
-        - Is appropriate for {difficulty} level
-        - Targets the student's specific recorded struggles where possible
-        - Includes a clear, step-by-step answer key
 
         Format your response exactly like this:
 
@@ -373,10 +302,8 @@ def generate_practice_question(topic, difficulty, memories, context, api_key="")
 # ==============================
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api_key=""):
 
-    # use the api key passed directly as a parameter
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=st.session_state["openai_api_key"])
 
-    # Top-k chunks — use manual embedding to avoid ChromaDB API key issues
     query_embedding_response = client.embeddings.create(
         input=query,
         model="text-embedding-3-small"
@@ -391,7 +318,6 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
     docs = results.get("documents", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
 
-    # Chunk rerank
     docs, metas = rerank(query, docs, metas, top_n=4)
 
     context = "\n\n---\n\n".join(docs)
@@ -402,7 +328,6 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
 
     prompt = build_prompt(query, context)
 
-    # Build messages list with short-term memory injected
     messages = []
 
     if system_message:
@@ -413,10 +338,8 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
             if turn["role"] in ("user", "assistant"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-    # Add the current question with RAG context
     messages.append({"role": "user", "content": prompt})
 
-    # First LLM call — may invoke a tool
     memory_keywords = ["struggling", "struggle", "confused", "where have i", "where am i",
                     "what have i", "what am i", "focus on", "should i study", "my weakness"]
     is_memory_query = any(kw in query.lower() for kw in memory_keywords)
@@ -433,7 +356,6 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
 
     response_message = response.choices[0].message
 
-    # Check if the LLM wants to call a tool
     if response_message.tool_calls:
         tool_call = response_message.tool_calls[0]
         tool_name = tool_call.function.name
@@ -441,11 +363,9 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
 
         memories = st.session_state.get("memories", [])
 
-        # Execute the correct tool
         if tool_name == "summarize_topic_from_memory":
             tool_result = summarize_topic_from_memory(tool_args["topic"], memories)
 
-            # bypass second LLM call entirely if no match found — prevents hallucination
             if tool_result.startswith("NO_MATCH:"):
                 return f"You have no recorded history of struggling with {tool_args['topic']}.", sources
 
@@ -455,13 +375,12 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
                 difficulty=tool_args["difficulty"],
                 memories=memories,
                 context=context,
-                api_key=api_key
+                api_key=st.session_state["openai_api_key"] 
             )
 
         else:
             tool_result = "Tool not found."
 
-        # Append assistant tool call as a proper dict (fixes BadRequestError)
         messages.append({
             "role": "assistant",
             "content": None,
@@ -477,14 +396,12 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
             ]
         })
 
-        # Append tool result
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
             "content": tool_result
         })
 
-        # Second LLM call — now with the tool result included
         second_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages
@@ -492,7 +409,6 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api
         answer = second_response.choices[0].message.content
 
     else:
-        # No tool call — use the first response directly
         answer = response_message.content
 
     return answer, sources
@@ -505,7 +421,6 @@ def rerank(query, docs, metadatas, top_n=4):
 
     pairs = [(query, doc) for doc in docs]
 
-    # Rerank scoring
     scores = reranker.predict(pairs)
     scored_items = list(zip(docs, metadatas, scores))
     scored_items.sort(key=lambda x: x[2], reverse=True)
@@ -523,7 +438,6 @@ def load_memory(memory_file):
     if os.path.exists(memory_file):
         with open(memory_file, "r") as f:
             data = json.load(f)
-            # handle both old format (plain list) and new format (dict)
             if isinstance(data, list):
                 return data, None
             return data.get("memories", []), data.get("profile", None)
@@ -536,7 +450,7 @@ def save_memories(memory_file, memories, profile=None):
 
 
 memories, saved_profile = load_memory(memory_file)
-st.session_state.memories = memories  # make memories available to tools in RAG_Pipeline
+st.session_state.memories = memories
 
 if saved_profile and "profile" not in st.session_state:
     st.session_state.profile = saved_profile
@@ -601,21 +515,8 @@ if "collection" not in st.session_state:
 
 # initialize OpenAI client
 if 'openai_client' not in st.session_state:
-    st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
+    st.session_state.openai_client = openai.OpenAI(api_key=st.session_state["openai_api_key"])
 
-# memory debug panel - uncomment for debugging
-#with st.sidebar.expander("Memory Debug Panel"):
-    #st.write("**Active user:**", username)
-    #st.write("**Memory file:**", memory_file)
-    #st.write("**File exists:**", os.path.exists(memory_file))
-    #st.write("**Current working directory:**", os.getcwd())
-    #st.write("**Directory writable:**", os.access(os.getcwd(), os.W_OK))
-    #st.write("**Loaded memories:**", memories)
-
-    #if "last_extracted_memories" in st.session_state:
-        #st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
-    #else:
-        #st.write("**Last extracted memories:** None yet")
 
 # study profile - created with long-term memory
 st.sidebar.divider()
@@ -642,9 +543,8 @@ if "messages" not in st.session_state:
 # greet user once per session
 if "greeted" not in st.session_state:
     st.session_state.greeted = True
-    is_returning = bool(memories) # returning if they have saved memories
+    is_returning = bool(memories)
 
-    # welcome-back message with saved profile if available
     if is_returning:
         if saved_profile:
             profile_section = f"\n\nHere's your study profile from last time:\n\n{saved_profile}"
@@ -662,7 +562,6 @@ if "greeted" not in st.session_state:
             "If the answer isn't in the materials, I'll point you in the right direction! "
             "The assistant can also learn from the conversation to better assist you in the future!"
         )
-
     st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
 
