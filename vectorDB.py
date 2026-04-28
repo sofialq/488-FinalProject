@@ -4,11 +4,14 @@ from pathlib import Path
 import pdfplumber
 import chromadb
 from openai import OpenAI
+import os
+
+# ensure API key always exists before any embedding calls
+st.session_state.setdefault("openai_api_key", os.getenv("OPENAI_API_KEY", ""))
 
 # SQLite fix for Streamlit Cloud
 __import__('pysqlite3')
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
 
 # chromaDB client — no embedding function needed
 chroma_client = chromadb.PersistentClient(path="./ChromaDB_for_HelpBot")
@@ -45,8 +48,8 @@ def chunk_text(text, chunk_size=800, overlap=150):
     return chunks
 
 
-def get_embedding(text):
-    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
+def get_embedding(text, api_key):
+    client = OpenAI(api_key=api_key)
     response = client.embeddings.create(
         input=text,
         model="text-embedding-3-small"
@@ -60,13 +63,12 @@ def get_ingested_sources(collection):
     return set(m["source"] for m in existing if m)
 
 
-def add_to_collection(collection, text, file_name):
+def add_to_collection(collection, text, file_name, api_key):
     chunks = chunk_text(text)
     ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
-    # generate embeddings manually and pass them directly
-    embeddings = [get_embedding(chunk) for chunk in chunks]
+    embeddings = [get_embedding(chunk, api_key) for chunk in chunks]
 
     try:
         collection.add(
@@ -80,7 +82,7 @@ def add_to_collection(collection, text, file_name):
         print(f"Error adding {file_name}: {e}")
 
 
-def load_pdfs(folder_path, collection):
+def load_pdfs(folder_path, collection, api_key):
     folder = Path(folder_path)
     already_ingested = get_ingested_sources(collection)
 
@@ -95,7 +97,7 @@ def load_pdfs(folder_path, collection):
 
         print(f"Ingesting: {pdf_file.name}")
         text = extract_text_from_pdf_path(pdf_file)
-        add_to_collection(collection, text, pdf_file.name)
+        add_to_collection(collection, text, pdf_file.name, api_key)
         newly_ingested.append(pdf_file.name)
 
     return newly_ingested, skipped
@@ -104,14 +106,20 @@ def load_pdfs(folder_path, collection):
 # ingestion - runs once per session
 if "ingestion_done" not in st.session_state:
     with st.spinner("Checking and ingesting documents..."):
-        newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
+        newly_ingested, skipped = load_pdfs(
+            "./IST387_documents",
+            st.session_state.collection,
+            st.session_state["openai_api_key"]
+        )
     st.session_state.ingestion_done = True
 
 
 # retrieval with manual embeddings
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
-    query_embedding = get_embedding(query)
+    api_key = st.session_state["openai_api_key"]
+
+    query_embedding = get_embedding(query, api_key)
 
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -125,6 +133,7 @@ def retrieve_context(query, k=4):
         return None, None
 
     return docs, metas
+
 
 
 ## querying collection for testing - uncomment to test

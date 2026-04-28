@@ -2,9 +2,7 @@ import streamlit as st
 import json
 import os
 import chromadb
-from chromadb.utils import embedding_functions
 import openai
-
 
 # user selection for user-based memory
 st.sidebar.header("User Settings")
@@ -23,6 +21,7 @@ if not openai_api_key:
     st.warning("Please enter your OpenAI API key to begin.")
     st.stop()
 
+# make key available to vectorDB + RAG
 st.session_state["openai_api_key"] = openai_api_key
 
 from RAG_Pipeline import rag_pipeline
@@ -34,7 +33,6 @@ if username:
 if not username:
     st.warning("Please enter a username to begin.")
     st.stop()
-
 
 # normalize username for file naming
 username = username.strip().lower().replace(" ", "_")
@@ -54,9 +52,11 @@ def load_memory(memory_file):
             return data.get("memories", []), data.get("profile", None)
     return [], None
 
+
 def save_memories(memory_file, memories, profile=None):
     with open(memory_file, "w") as f:
         json.dump({"memories": memories, "profile": profile}, f)
+
 
 memories, saved_profile = load_memory(memory_file)
 st.session_state.memories = memories  # make memories available to tools in RAG_Pipeline
@@ -80,12 +80,10 @@ def generate_profile(memories, username):
             You are summarizing a student's learning profile for IST 387 at Syracuse University.
 
             Based on the following observed struggles, write a short, encouraging 3-part profile:
-            1. **Concepts to focus on** — a bullet list of topics they should review
-            2. **Strengths** — infer what they seem comfortable with based on what ISN'T flagged
-            3. **Growth** - where you've noticed growth from the questions they've been asking/stopped asking
-            4. **Study tip** — one personalized recommendation based on their pattern of struggles
-
-            Keep it concise, friendly, and actionable. Address the student directly.
+            1. Concepts to focus on
+            2. Strengths
+            3. Growth
+            4. One personalized study tip
 
             Observed struggles:
             {memory_str}
@@ -96,32 +94,28 @@ def generate_profile(memories, username):
 
 
 # system message
-system_message = "You are a helpful teaching assistant for IST 387 at Syracuse University. If reporting on a student's struggles or learning history, " \
-"only reference what is explicitly recorded in their memory. " \
-"Never infer, guess, or generalize struggles that are not directly recorded."
+system_message = (
+    "You are a helpful teaching assistant for IST 387 at Syracuse University. "
+    "If reporting on a student's struggles or learning history, only reference what is explicitly recorded in their memory. "
+    "Never infer or guess struggles that are not directly recorded."
+)
 
 if memories:
     memory_str = "\n".join([f"- {m}" for m in memories])
     system_message += (
         "\n\nHere are some things you've learned from previous interactions with this user:\n"
         f"{memory_str}\n\n"
-        "Use this information to help answer the user's questions, but do not rely on it exclusively. "
-        "Always use verified course materials as your primary source."
+        "Use this information to help answer the user's questions, but always rely on verified course materials first."
     )
 
-# initialize chromaDB
-embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=openai_api_key,
-    model_name="text-embedding-ada-002"
-)
 
+# initialize chromaDB (no embedding function needed — manual embeddings used)
 chroma_client = chromadb.PersistentClient(
     path="./ChromaDB_for_HelpBot"
 )
 
 collection = chroma_client.get_or_create_collection(
-    name="IST387Collection",
-    embedding_function=embedding_fn
+    name="IST387Collection"
 )
 
 if "collection" not in st.session_state:
@@ -131,7 +125,6 @@ if "collection" not in st.session_state:
 # initialize OpenAI client
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
-
 
 # memory debug panel - uncomment for debugging
 #with st.sidebar.expander("Memory Debug Panel"):
@@ -146,7 +139,6 @@ if 'openai_client' not in st.session_state:
         #st.write("**Last extracted memories:**", st.session_state.last_extracted_memories)
     #else:
         #st.write("**Last extracted memories:** None yet")
-
 
 # study profile - created with long-term memory
 st.sidebar.divider()
@@ -173,7 +165,7 @@ if "messages" not in st.session_state:
 # greet user once per session
 if "greeted" not in st.session_state:
     st.session_state.greeted = True
-    is_returning = bool(memories)  # returning if they have saved memories
+    is_returning = bool(memories) # returning if they have saved memories
 
     # welcome-back message with saved profile if available
     if is_returning:
@@ -190,7 +182,7 @@ if "greeted" not in st.session_state:
     else:
         welcome_msg = (
             f"Welcome {username}! \nAsk any questions about IST 387 and get answers based on verified course materials.\n\n"
-            "If the answer isn't in the materials, I'll do my best to point you in the right direction! "
+            "If the answer isn't in the materials, I'll point you in the right direction! "
             "The assistant can also learn from the conversation to better assist you in the future!"
         )
 
@@ -216,7 +208,7 @@ if question:
 
     # build short-term memory from session history - exclude the current message (last item) since it's passed separately as `question`
     conversation_history = st.session_state.messages[:-1]
-
+    
     # cap history to last 6 interactions to avoid token overflows
     max_interactions = 6
     conversation_history = conversation_history[-(max_interactions * 2):]
@@ -224,7 +216,12 @@ if question:
     # generate answer using RAG + short-term memory + long-term memory
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
-            answer, _ = rag_pipeline(question, system_message, conversation_history=conversation_history, api_key=openai_api_key)
+            answer, _ = rag_pipeline(
+                question,
+                system_message,
+                conversation_history=conversation_history,
+                api_key=openai_api_key
+            )
 
         st.write(answer)
 
@@ -254,8 +251,7 @@ if question:
         User message: {user_msg}
         Assistant message: {assistant_msg}
 
-        Return ONLY valid JSON. No explanation.
-        Example: ["confused about joins", "struggling with map functions"]
+        Return ONLY valid JSON.
         """
 
         response = st.session_state.openai_client.chat.completions.create(
@@ -271,7 +267,7 @@ if question:
 
             if new_memories:
                 memories.extend(new_memories)
-                st.session_state.memories = memories  # keep session state in sync after new memories are added
+                st.session_state.memories = memories
                 save_memories(memory_file, memories, st.session_state.get("profile"))
 
         except json.JSONDecodeError:
@@ -280,4 +276,3 @@ if question:
 
     # refresh UI so answer appears immediately
     st.rerun()
-
