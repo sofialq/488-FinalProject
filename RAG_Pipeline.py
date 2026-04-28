@@ -176,9 +176,15 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
     # initialize client using the key entered by the user
     client = OpenAI(api_key=st.session_state.get("api_key_input", ""))
 
-    # Top-k chunks
+    # Top-k chunks — use manual embedding to avoid ChromaDB API key issues
+    query_embedding_response = client.embeddings.create(
+        input=query,
+        model="text-embedding-3-small"
+    )
+    query_embedding = query_embedding_response.data[0].embedding
+
     results = st.session_state.collection.query(
-        query_texts=[query],
+        query_embeddings=[query_embedding],
         n_results=10
     )
 

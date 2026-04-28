@@ -2,43 +2,18 @@ import streamlit as st
 import sys
 from pathlib import Path
 import pdfplumber
-import openai
 import chromadb
-from chromadb.utils import embedding_functions
-
 
 # SQLite fix for Streamlit Cloud
-if "streamlit.runtime.scriptrunner.script_runner" in sys.modules:
-    try:
-        __import__('pysqlite3')
-        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-    except ImportError:
-        pass
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 
-# chromaDB client — no embedding function needed at module level
-chroma_client = chromadb.PersistentClient(
-    path="./ChromaDB_for_HelpBot"
-)
+# chromaDB client — no embedding function needed
+chroma_client = chromadb.PersistentClient(path="./ChromaDB_for_HelpBot")
+collection = chroma_client.get_or_create_collection(name="IST387Collection")
 
 if "collection" not in st.session_state:
-    # ensure user has entered key first
-    openai_api_key = st.session_state.get("api_key_input", "")
-
-    # OpenAI client setup
-    if 'openai_client' not in st.session_state:
-        st.session_state.openai_client = openai.OpenAI(api_key=openai_api_key)
-
-    embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=openai_api_key,
-        model_name="text-embedding-ada-002"
-    )
-
-    collection = chroma_client.get_or_create_collection(
-        name="IST387Collection",
-        embedding_function=embedding_fn
-    )
-
     st.session_state.collection = collection
 
 
@@ -69,6 +44,16 @@ def chunk_text(text, chunk_size=800, overlap=150):
     return chunks
 
 
+def get_embedding(text):
+    """Generate an embedding using the OpenAI client stored in session state."""
+    client = st.session_state.openai_client
+    response = client.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"
+    )
+    return response.data[0].embedding
+
+
 # ingestion functions
 def get_ingested_sources(collection):
     existing = collection.get()["metadatas"]
@@ -80,8 +65,16 @@ def add_to_collection(collection, text, file_name):
     ids = [f"{file_name}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
+    # generate embeddings manually and pass them directly
+    embeddings = [get_embedding(chunk) for chunk in chunks]
+
     try:
-        collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+        collection.add(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas,
+            embeddings=embeddings
+        )
         print(f"Added {len(chunks)} chunks from {file_name}")
     except Exception as e:
         print(f"Error adding {file_name}: {e}")
@@ -112,16 +105,16 @@ def load_pdfs(folder_path, collection):
 if "ingestion_done" not in st.session_state:
     with st.spinner("Checking and ingesting documents..."):
         newly_ingested, skipped = load_pdfs("./IST387_documents", st.session_state.collection)
-
     st.session_state.ingestion_done = True
 
 
-# retrieval
+# retrieval with manual embeddings
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
+    query_embedding = get_embedding(query)
 
     results = collection.query(
-        query_texts=[query],
+        query_embeddings=[query_embedding],
         n_results=k
     )
 
