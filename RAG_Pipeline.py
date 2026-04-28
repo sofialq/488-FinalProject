@@ -10,7 +10,6 @@ except ImportError:
     retrieve_context = None
 
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 
 def build_prompt(query, context):
@@ -123,6 +122,9 @@ def generate_practice_question(topic, difficulty, memories, context):
     difficulty level, informed by the user's memory and the retrieved course context.
     Returns a formatted question + answer key for the LLM to present to the user.
     """
+    # initialize client lazily so secrets are always available
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
     # pull relevant memory struggles to personalize the question
     topic_lower = topic.lower()
     matches = [m for m in memories if topic_lower in m.lower()] if memories else []
@@ -171,6 +173,9 @@ def generate_practice_question(topic, difficulty, memories, context):
 # ==============================
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
 
+    # initialize client lazily so secrets are always available
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
     # Top-k chunks
     results = st.session_state.collection.query(
         query_texts=[query],
@@ -218,7 +223,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
             "type": "function",
             "function": {"name": "summarize_topic_from_memory"}
         } if is_memory_query else "auto"
-)
+    )
 
     response_message = response.choices[0].message
 
@@ -231,11 +236,10 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
         memories = st.session_state.get("memories", [])
 
         # Execute the correct tool
-        # Execute the correct tool
         if tool_name == "summarize_topic_from_memory":
             tool_result = summarize_topic_from_memory(tool_args["topic"], memories)
 
-            # bypass second LLM call entirely if no match found- prevent LLM from hallucinating using system message context
+            # bypass second LLM call entirely if no match found — prevents hallucination
             if tool_result.startswith("NO_MATCH:"):
                 return f"You have no recorded history of struggling with {tool_args['topic']}.", sources
 
