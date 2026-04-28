@@ -4,7 +4,6 @@ from pathlib import Path
 import pdfplumber
 import openai
 import chromadb
-from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
@@ -31,8 +30,7 @@ embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
 )
 
 chroma_client = chromadb.PersistentClient(
-    path="./ChromaDB_for_HelpBot",
-    settings=Settings(anonymized_telemetry=False)
+    path="./ChromaDB_for_HelpBot"
 )
 
 collection = chroma_client.get_or_create_collection(

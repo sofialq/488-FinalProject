@@ -2,7 +2,6 @@ import streamlit as st
 import json
 import os
 import chromadb
-from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from RAG_Pipeline import rag_pipeline
 import openai
