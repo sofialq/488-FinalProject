@@ -116,14 +116,14 @@ def summarize_topic_from_memory(topic, memories):
         )
 
 
-def generate_practice_question(topic, difficulty, memories, context):
+def generate_practice_question(topic, difficulty, memories, context, api_key=""):
     """
     Generates a personalized practice question on the given topic at the given
     difficulty level, informed by the user's memory and the retrieved course context.
     Returns a formatted question + answer key for the LLM to present to the user.
     """
-    # initialize client using the key entered by the user
-    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
+    # use the api key passed directly as a parameter
+    client = OpenAI(api_key=api_key)
 
     # pull relevant memory struggles to personalize the question
     topic_lower = topic.lower()
@@ -171,10 +171,10 @@ def generate_practice_question(topic, difficulty, memories, context):
 # ==============================
 # RAG PIPELINE FUNCTION
 # ==============================
-def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
+def rag_pipeline(query, system_message=None, conversation_history=None, k=4, api_key=""):
 
-    # initialize client using the key entered by the user
-    client = OpenAI(api_key=st.session_state.get("openai_api_key", ""))
+    # use the api key passed directly as a parameter
+    client = OpenAI(api_key=api_key)
 
     # Top-k chunks — use manual embedding to avoid ChromaDB API key issues
     query_embedding_response = client.embeddings.create(
@@ -254,7 +254,8 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
                 topic=tool_args["topic"],
                 difficulty=tool_args["difficulty"],
                 memories=memories,
-                context=context
+                context=context,
+                api_key=api_key
             )
 
         else:

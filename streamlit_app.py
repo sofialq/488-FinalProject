@@ -224,7 +224,7 @@ if question:
     # generate answer using RAG + short-term memory + long-term memory
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
-            answer, _ = rag_pipeline(question, system_message, conversation_history=conversation_history)
+            answer, _ = rag_pipeline(question, system_message, conversation_history=conversation_history, api_key=openai_api_key)
 
         st.write(answer)
 
