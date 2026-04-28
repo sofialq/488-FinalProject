@@ -6,4 +6,4 @@ pdfplumber
 sentence-transformers
 transformers
 torch
-numpy
+numpy<2.0
